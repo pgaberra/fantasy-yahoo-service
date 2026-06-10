@@ -1,0 +1,10 @@
+# Profile: local — run against the local docker-compose Postgres.
+#   SPRING_PROFILES_ACTIVE=local DB_PASSWORD=fantasy ./gradlew bootRun
+# Host, database and user are the docker-compose dev values (not secrets). The
+# password is NOT committed in any app-config file — provide it via DB_PASSWORD
+# (the docker-compose value is "fantasy"). Flyway stays enabled (inherited from
+# application.yaml) so local runs manage the local schema.
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/fantasy_yahoo
+    username: fantasy

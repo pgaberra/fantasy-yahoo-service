@@ -1,0 +1,63 @@
+spring:
+  application:
+    name: fantasy-yahoo-service
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    # DB_OPTIONS is empty locally; set it to "?sslmode=require" for managed Postgres
+    # such as Neon (Render free tier only allows one DB, used by fantasy-db).
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:fantasy_yahoo}${DB_OPTIONS:}
+    username: ${DB_USER:fantasy}
+    # No default — the password is always supplied via the DB_PASSWORD env var
+    # (Render in prod; your shell locally). Never commit a password here.
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      # Flyway owns the schema; Hibernate only validates the entity mapping.
+      ddl-auto: validate
+    open-in-view: false
+  flyway:
+    enabled: true
+
+server:
+  port: ${PORT:8088}
+
+# Pre-shared secret the BFF sends as X-Internal-Api-Key. When blank (local dev / CI)
+# the InternalApiKeyFilter is disabled so the service is open.
+internal:
+  api-key: ${INTERNAL_API_KEY:}
+
+# Yahoo OAuth 2.0 + Fantasy Sports API.
+# Secrets default to empty so the app still boots without them (the OAuth endpoints
+# just fail at call time); provide them via env vars, never in git. Non-secret URLs
+# and the scope carry defaults.
+yahoo:
+  oauth:
+    client-id: ${YAHOO_CLIENT_ID:}
+    client-secret: ${YAHOO_CLIENT_SECRET:}
+    # The callback URL registered with the Yahoo app — must match exactly. Yahoo rejects
+    # localhost and *.onrender.com, so staging needs a custom domain on this service.
+    redirect-uri: ${YAHOO_REDIRECT_URI:http://localhost:8088/api/v1/yahoo/oauth/callback}
+    scope: ${YAHOO_SCOPE:fspt-r}
+    # HMAC key for the short-lived OAuth state (carries the app user id).
+    state-secret: ${YAHOO_STATE_SECRET:}
+    # Base64 256-bit AES key for encrypting stored tokens (openssl rand -base64 32).
+    token-encryption-key: ${TOKEN_ENCRYPTION_KEY:}
+    # Where the browser is redirected after a successful connect (the web app).
+    web-post-connect-url: ${WEB_POST_CONNECT_URL:http://localhost:4200}
+    login-base-url: ${YAHOO_LOGIN_BASE_URL:https://api.login.yahoo.com}
+    api-base-url: ${YAHOO_API_BASE_URL:https://fantasysports.yahooapis.com/fantasy/v2}
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+  default-produces-media-type: application/json
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

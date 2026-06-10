@@ -1,0 +1,50 @@
+# No `databases:` block: Render's free tier allows only one managed Postgres, which is
+# already used by fantasy-db. This service uses its own external free Postgres (Neon).
+# Set the DB_* vars below from your Neon project's connection details.
+services:
+  - type: web
+    name: fantasy-yahoo-service
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /actuator/health
+    autoDeploy: true
+    envVars:
+      # Neon connection details (Dashboard → your project → Connection Details).
+      - key: DB_HOST
+        sync: false          # e.g. ep-xxx-pooler.eu-central-1.aws.neon.tech
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_NAME
+        sync: false          # e.g. neondb
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # Neon requires TLS.
+      - key: DB_OPTIONS
+        value: "?sslmode=require"
+      # Pre-shared secret used by the BFF to authenticate service-to-service calls.
+      # Generate with: openssl rand -hex 32
+      # Set the SAME value on fantasy-bff under YAHOO_INTERNAL_API_KEY.
+      - key: INTERNAL_API_KEY
+        sync: false
+      # --- Yahoo OAuth (from your Yahoo developer app) ---
+      - key: YAHOO_CLIENT_ID
+        sync: false
+      - key: YAHOO_CLIENT_SECRET
+        sync: false
+      # Must EXACTLY match the redirect URI registered with the Yahoo app. Yahoo rejects
+      # *.onrender.com, so this is a custom domain pointed at this service, e.g.
+      # https://yahoo.yourdomain.com/api/v1/yahoo/oauth/callback
+      - key: YAHOO_REDIRECT_URI
+        sync: false
+      # HMAC key for the OAuth state. Generate with: openssl rand -hex 32
+      - key: YAHOO_STATE_SECRET
+        sync: false
+      # Base64 256-bit AES key for token encryption. Generate with: openssl rand -base64 32
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      # Where the browser is sent after a successful connect (the deployed web app).
+      - key: WEB_POST_CONNECT_URL
+        sync: false

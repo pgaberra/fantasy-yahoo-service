@@ -1,0 +1,95 @@
+openapi: 3.1.0
+info:
+  title: Fantasy Yahoo Service API
+  description: "Integrates with the Yahoo Fantasy Sports API: owns the per-user OAuth\
+    \ 2.0 flow and exposes a user's fantasy league settings to the BFF."
+  version: v1
+servers:
+- url: /
+tags:
+- name: Yahoo OAuth
+  description: Per-user Yahoo account connection flow
+paths:
+  /api/v1/yahoo/oauth/authorize-url:
+    post:
+      tags:
+      - Yahoo OAuth
+      summary: Build the Yahoo authorization URL
+      description: Returns the Yahoo consent URL (with a signed state) the browser
+        should be sent to.
+      operationId: authorizeUrl
+      parameters:
+      - name: appUserId
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Authorization URL created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizeUrlResponse"
+  /api/v1/yahoo/oauth/connection:
+    get:
+      tags:
+      - Yahoo OAuth
+      summary: Yahoo connection status
+      description: Whether the given user has a connected Yahoo account.
+      operationId: connection
+      parameters:
+      - name: appUserId
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          description: Connection status returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConnectionResponse"
+  /api/v1/yahoo/oauth/callback:
+    get:
+      tags:
+      - Yahoo OAuth
+      summary: Yahoo OAuth callback
+      description: "Yahoo redirects the browser here after consent. Exchanges the\
+        \ code for tokens, stores them, then redirects back to the web app. Public\
+        \ (validated by the signed state), so it is exempt from the internal API-key\
+        \ filter."
+      operationId: callback
+      parameters:
+      - name: code
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: state
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        "302":
+          description: Redirect back to the web app
+components:
+  schemas:
+    AuthorizeUrlResponse:
+      type: object
+      properties:
+        authorizeUrl:
+          type: string
+          description: The Yahoo consent URL the browser should be redirected to.
+      required:
+      - authorizeUrl
+    ConnectionResponse:
+      type: object
+      properties:
+        connected:
+          type: boolean
+          description: Whether the user has a connected Yahoo account.
+      required:
+      - connected
