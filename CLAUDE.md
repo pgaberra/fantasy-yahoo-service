@@ -53,15 +53,24 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
     →store), and hands out a valid access token (refreshing transparently — phase 2 use).
   - `YahooOAuthController` — `/api/v1/yahoo/oauth/{authorize-url,callback,connection}`.
   - `dto/` — `AuthorizeUrlResponse`, `ConnectionResponse`.
+- `league/` — fantasy league data:
+  - `YahooFantasyClient` — `RestClient` over the Yahoo Fantasy API; returns `JsonNode`
+    (Yahoo's JSON is deeply nested with numeric-keyed objects mixed into arrays).
+  - `YahooLeagueService` — parses that JSON defensively into clean DTOs; gets a valid
+    access token from `YahooOAuthService` (refreshing as needed).
+  - `YahooLeagueController` — `GET /api/v1/yahoo/leagues` and
+    `…/leagues/{leagueKey}/settings`.
+  - `dto/` — `LeaguesResponse`/`LeagueSummary`, `LeagueSettingsResponse` (+ `StatCategory`,
+    `RosterSlot`).
 - `config/` — `OpenApiConfig` (pins server URL to `/`), `YahooOAuthProperties`
   (`@ConfigurationProperties("yahoo.oauth")`), `YahooRestClientConfig` (login + API
   `RestClient`s), `InternalApiKeyFilter` (API-key auth; exempts the callback).
 - `exception/` — `YahooNotConnectedException`, `ErrorDto`, `GlobalExceptionHandler`.
 
-**Phase status:** the OAuth connect flow + encrypted token storage + `/connection` are
-implemented. **League discovery + settings** endpoints (the actual payoff) are the next
-phase — they call Yahoo `/users;use_login=1/games;game_keys=nhl/leagues` and
-`/league/{league_key}/settings` using `YahooOAuthService.validAccessToken(...)`.
+**Phase status:** OAuth connect flow + encrypted token storage + `/connection` **and**
+league discovery + settings are implemented. Remaining: **BFF wiring** (typed client,
+identity threading), the **web** Connect/picker UI, and **deploy** (needs a custom
+callback domain — Yahoo rejects localhost / `*.onrender.com`).
 
 ## Database & config
 

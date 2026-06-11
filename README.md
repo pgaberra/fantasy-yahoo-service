@@ -23,9 +23,9 @@ Swagger UI: http://localhost:8088/swagger-ui.html
 | `POST` | `/api/v1/yahoo/oauth/authorize-url?appUserId=` | Build the Yahoo consent URL (signed state) |
 | `GET` | `/api/v1/yahoo/oauth/callback?code&state` | Yahoo redirect → exchange code, store tokens, 302 back to web |
 | `GET` | `/api/v1/yahoo/oauth/connection?appUserId=` | Whether the user has connected Yahoo |
+| `GET` | `/api/v1/yahoo/leagues?appUserId=` | The user's NHL fantasy leagues |
+| `GET` | `/api/v1/yahoo/leagues/{leagueKey}/settings?appUserId=` | A league's scoring + roster settings |
 | `GET` | `/actuator/health` | Health check |
-
-League discovery + settings endpoints are the next phase.
 
 ## Configuration
 
