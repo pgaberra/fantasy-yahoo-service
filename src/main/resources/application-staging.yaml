@@ -1,0 +1,14 @@
+# Profile: staging — run the service locally against a remote/deployed staging DB
+# (e.g. over an SSH tunnel to the Coolify Postgres on the staging server). Host / db /
+# user are supplied via env (not secrets); the password is NEVER committed — provide it
+# via DB_PASSWORD. Add DB_OPTIONS=?sslmode=require if connecting over a public/TLS link.
+#   SPRING_PROFILES_ACTIVE=staging DB_HOST=… DB_NAME=… DB_PASSWORD=… ./gradlew bootRun
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME}${DB_OPTIONS:}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD}
+  flyway:
+    # The deployed service owns the schema; never migrate the shared staging DB from a
+    # local run. Override with SPRING_FLYWAY_ENABLED=true only if you intend to.
+    enabled: false

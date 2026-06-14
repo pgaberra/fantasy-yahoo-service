@@ -1,0 +1,3 @@
+# Keep the generated OpenAPI spec LF-normalised so it diffs cleanly between
+# Windows dev machines and Linux CI runners.
+specs/*.yaml text eol=lf

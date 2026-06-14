@@ -1,0 +1,104 @@
+package com.fantasy.yahoo.oauth;
+
+import com.fantasy.yahoo.config.YahooOAuthProperties;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.util.UriComponentsBuilder;
+
+import java.time.Instant;
+
+/**
+ * Owns the per-user Yahoo OAuth 2.0 authorization-code flow and token lifecycle.
+ *
+ * connect: build the Yahoo consent URL with a signed `state` carrying the app user id.
+ * callback: verify state, exchange the code for tokens, store them encrypted.
+ * access: hand out a valid access token, refreshing it transparently when expired.
+ */
+@Service
+public class YahooOAuthService {
+
+    // Refresh a little before the token actually expires to avoid races near the boundary.
+    private static final long EXPIRY_SKEW_SECONDS = 60;
+
+    private final YahooOAuthProperties props;
+    private final OAuthStateCodec stateCodec;
+    private final YahooTokenClient tokenClient;
+    private final TokenCipher cipher;
+    private final YahooOAuthTokenRepository repository;
+
+    public YahooOAuthService(YahooOAuthProperties props,
+                             OAuthStateCodec stateCodec,
+                             YahooTokenClient tokenClient,
+                             TokenCipher cipher,
+                             YahooOAuthTokenRepository repository) {
+        this.props = props;
+        this.stateCodec = stateCodec;
+        this.tokenClient = tokenClient;
+        this.cipher = cipher;
+        this.repository = repository;
+    }
+
+    /** The Yahoo consent URL the browser should be sent to, for the given app user. */
+    public String buildAuthorizeUrl(String appUserId) {
+        String state = stateCodec.encode(appUserId, Instant.now());
+        return UriComponentsBuilder.fromUriString(props.loginBaseUrl())
+                .path("/oauth2/request_auth")
+                .queryParam("client_id", props.clientId())
+                .queryParam("redirect_uri", props.redirectUri())
+                .queryParam("response_type", "code")
+                .queryParam("scope", props.scope())
+                .queryParam("state", state)
+                .build()
+                .toUriString();
+    }
+
+    /** Handles the Yahoo callback: verifies state, exchanges the code, stores tokens. */
+    @Transactional
+    public void handleCallback(String code, String state) {
+        Instant now = Instant.now();
+        String appUserId = stateCodec.decodeAndVerify(state, now);
+        YahooTokenClient.TokenResponse tokens = tokenClient.exchangeCode(code);
+        upsert(appUserId, tokens, now);
+    }
+
+    public boolean isConnected(String appUserId) {
+        return repository.existsByAppUserId(appUserId);
+    }
+
+    /** A valid Yahoo access token for the user, refreshed if necessary. (Used in phase 2.) */
+    @Transactional
+    public String validAccessToken(String appUserId) {
+        YahooOAuthToken token = repository.findByAppUserId(appUserId)
+                .orElseThrow(() -> new YahooNotConnectedException(
+                        "No Yahoo account is connected for this user"));
+        Instant now = Instant.now();
+        if (now.isBefore(token.getAccessExpiresAt().minusSeconds(EXPIRY_SKEW_SECONDS))) {
+            return cipher.decrypt(token.getAccessTokenEnc());
+        }
+        YahooTokenClient.TokenResponse refreshed =
+                tokenClient.refresh(cipher.decrypt(token.getRefreshTokenEnc()));
+        upsert(appUserId, refreshed, now);
+        return refreshed.accessToken();
+    }
+
+    private void upsert(String appUserId, YahooTokenClient.TokenResponse tokens, Instant now) {
+        YahooOAuthToken entity = repository.findByAppUserId(appUserId)
+                .orElseGet(() -> {
+                    YahooOAuthToken fresh = new YahooOAuthToken();
+                    fresh.setAppUserId(appUserId);
+                    fresh.setCreatedAt(now);
+                    return fresh;
+                });
+        entity.setAccessTokenEnc(cipher.encrypt(tokens.accessToken()));
+        // Yahoo rotates the refresh token only sometimes; keep the previous one if absent.
+        if (tokens.refreshToken() != null && !tokens.refreshToken().isBlank()) {
+            entity.setRefreshTokenEnc(cipher.encrypt(tokens.refreshToken()));
+        }
+        if (tokens.xoauthYahooGuid() != null) {
+            entity.setYahooGuid(tokens.xoauthYahooGuid());
+        }
+        entity.setAccessExpiresAt(tokens.expiresAt(now));
+        entity.setUpdatedAt(now);
+        repository.save(entity);
+    }
+}
