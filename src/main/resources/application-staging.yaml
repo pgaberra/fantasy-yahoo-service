@@ -1,15 +1,14 @@
-# Profile: staging — run locally against this service's deployed Neon database.
-#   SPRING_PROFILES_ACTIVE=staging DB_PASSWORD=<neon-password> ./gradlew bootRun
-# Host / database / user are not secrets and are tracked here; the password is
-# NEVER committed — provide it via the DB_PASSWORD env var.
-# NOTE: placeholders — fill in once this service has its own Neon project (it must
-# NOT share fantasy-nhl-service's database). Use Neon's DIRECT endpoint (no "-pooler").
+# Profile: staging — run the service locally against a remote/deployed staging DB
+# (e.g. over an SSH tunnel to the Coolify Postgres on the staging server). Host / db /
+# user are supplied via env (not secrets); the password is NEVER committed — provide it
+# via DB_PASSWORD. Add DB_OPTIONS=?sslmode=require if connecting over a public/TLS link.
+#   SPRING_PROFILES_ACTIVE=staging DB_HOST=… DB_NAME=… DB_PASSWORD=… ./gradlew bootRun
 spring:
   datasource:
-    url: jdbc:postgresql://YOUR-YAHOO-NEON-HOST.neon.tech:5432/neondb?sslmode=require
-    username: neondb_owner
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME}${DB_OPTIONS:}
+    username: ${DB_USER:postgres}
     password: ${DB_PASSWORD}
   flyway:
-    # The deployed service owns the schema; never migrate shared staging from a
+    # The deployed service owns the schema; never migrate the shared staging DB from a
     # local run. Override with SPRING_FLYWAY_ENABLED=true only if you intend to.
     enabled: false

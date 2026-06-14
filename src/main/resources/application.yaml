@@ -5,12 +5,13 @@ spring:
     virtual:
       enabled: true
   datasource:
-    # DB_OPTIONS is empty locally; set it to "?sslmode=require" for managed Postgres
-    # such as Neon (Render free tier only allows one DB, used by fantasy-db).
+    # DB_OPTIONS is empty locally and on the deployed Coolify Postgres (same Docker
+    # network, no TLS); set it to "?sslmode=require" when connecting to a managed
+    # Postgres over a public/TLS link.
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:fantasy_yahoo}${DB_OPTIONS:}
     username: ${DB_USER:fantasy}
     # No default — the password is always supplied via the DB_PASSWORD env var
-    # (Render in prod; your shell locally). Never commit a password here.
+    # (Coolify in the deployed envs; your shell locally). Never commit a password here.
     password: ${DB_PASSWORD}
   jpa:
     hibernate:
@@ -37,7 +38,8 @@ yahoo:
     client-id: ${YAHOO_CLIENT_ID:}
     client-secret: ${YAHOO_CLIENT_SECRET:}
     # The callback URL registered with the Yahoo app — must match exactly. Yahoo rejects
-    # localhost and *.onrender.com, so staging needs a custom domain on this service.
+    # localhost and shared free-hosting domains, so each env needs a custom domain
+    # (yahoo.slapstat.com / yahoo.staging.slapstat.com).
     redirect-uri: ${YAHOO_REDIRECT_URI:http://localhost:8088/api/v1/yahoo/oauth/callback}
     scope: ${YAHOO_SCOPE:fspt-r}
     # HMAC key for the short-lived OAuth state (carries the app user id).

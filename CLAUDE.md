@@ -68,9 +68,9 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
 - `exception/` — `YahooNotConnectedException`, `ErrorDto`, `GlobalExceptionHandler`.
 
 **Phase status:** OAuth connect flow + encrypted token storage + `/connection` **and**
-league discovery + settings are implemented. Remaining: **BFF wiring** (typed client,
-identity threading), the **web** Connect/picker UI, and **deploy** (needs a custom
-callback domain — Yahoo rejects localhost / `*.onrender.com`).
+league discovery + settings are implemented. The BFF wiring lands in a parallel PR and the
+service deploys on Coolify behind a public callback domain (`yahoo.slapstat.com`). Remaining:
+the **web** Connect/picker UI.
 
 ## Database & config
 
@@ -81,8 +81,9 @@ callback domain — Yahoo rejects localhost / `*.onrender.com`).
   `token-encryption-key`) default to empty so the app still boots for tests/CI; the OAuth
   endpoints just fail at call time when unset. Non-secret URLs + `scope` carry defaults.
 - **Yahoo redirect URI gotcha:** Yahoo rejects `localhost` and shared free-hosting domains
-  (`*.onrender.com`, …) as the callback domain. Staging therefore needs a **custom domain**
-  pointed at this service; `YAHOO_REDIRECT_URI` must match it exactly.
+  as the callback domain. Each environment therefore needs a **custom domain**
+  (`yahoo.slapstat.com` / `yahoo.staging.slapstat.com`); `YAHOO_REDIRECT_URI` must match the
+  value registered with the Yahoo app exactly.
 - Migrations live in `src/main/resources/db/migration/` (`V1`). **Schema changes = a new
   `V__` migration**, never edit an applied one.
 - Tests use H2 in PostgreSQL mode, `ddl-auto: create-drop`, Flyway disabled.
@@ -158,8 +159,10 @@ No attribution trailers (`attribution.commit` / `attribution.pr` are `""` in
 
 ## Deployment
 
-- Dockerized (multi-stage `Dockerfile`), deployed to Render as a web service backed by an
-  external **Neon** Postgres (its own, not shared with fantasy-nhl-service). See
-  `render.yaml` / `DEPLOYMENT.md`. Set `INTERNAL_API_KEY` (same value the BFF sends as
-  `YAHOO_INTERNAL_API_KEY`), the `YAHOO_*` OAuth vars, `TOKEN_ENCRYPTION_KEY`, and a custom
-  domain for the callback. Health check: `/actuator/health`.
+- Dockerized (multi-stage `Dockerfile`), deployed via **Coolify** (Hetzner) backed by its
+  own dedicated Coolify Postgres, on both prod and staging. Unlike the other internal
+  services it has a **public domain** (`yahoo.slapstat.com` / `yahoo.staging.slapstat.com`)
+  for the OAuth callback, plus the internal alias `yahoo-service:8088` the BFF calls. See
+  `DEPLOYMENT.md`. Set `INTERNAL_API_KEY` (same value the BFF sends as
+  `YAHOO_INTERNAL_API_KEY`), the `YAHOO_*` OAuth vars, and `TOKEN_ENCRYPTION_KEY`. Health
+  check: `/actuator/health`.

@@ -14,7 +14,8 @@ docker compose up -d          # Postgres on host port 5434, DB "fantasy_yahoo"
 Swagger UI: http://localhost:8088/swagger-ui.html
 
 > The live OAuth round-trip needs a Yahoo developer app and a **custom callback domain**
-> (Yahoo rejects `localhost` and `*.onrender.com`). See `DEPLOYMENT.md`.
+> (Yahoo rejects `localhost` and shared free-hosting domains) — `yahoo.slapstat.com` in
+> production. See `DEPLOYMENT.md`.
 
 ## Endpoints
 
