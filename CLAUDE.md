@@ -90,6 +90,9 @@ the **web** Connect/picker UI.
 
 ## Conventions
 
+- **No code comments unless asked.** Don't write code comments or documentation unless
+  specifically asked to — prefer self-explanatory names. (Same AI guideline as the
+  `fantasy-web` repo.)
 - Feature-package layout. Keep endpoints under `/api/v1`.
 - Tokens (access + refresh) are **always encrypted at rest** — never store or log a raw
   token. The state and encryption keys come only from env (never committed).
