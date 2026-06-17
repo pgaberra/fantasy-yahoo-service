@@ -36,10 +36,16 @@ public class YahooFantasyClient {
         return get(accessToken, "/league/" + leagueKey + "/settings?format=json");
     }
 
-    /** One page (25) of a game's player collection, starting at the given offset. */
-    public JsonNode getGamePlayers(String accessToken, String gameKey, int start) {
+    /**
+     * One page (25) of a game's player collection with each player's season stat line,
+     * starting at the given offset. When {@code season} is blank Yahoo uses the current season.
+     */
+    public JsonNode getGamePlayers(String accessToken, String gameKey, int start, String season) {
+        String stats = (season == null || season.isBlank())
+                ? "/stats;type=season"
+                : "/stats;type=season;season=" + season;
         return get(accessToken,
-                "/game/" + gameKey + "/players;start=" + start + ";count=25?format=json");
+                "/game/" + gameKey + "/players;start=" + start + ";count=25" + stats + "?format=json");
     }
 
     private JsonNode get(String accessToken, String path) {
