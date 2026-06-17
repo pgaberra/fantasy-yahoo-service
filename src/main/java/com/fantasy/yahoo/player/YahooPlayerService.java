@@ -2,14 +2,18 @@ package com.fantasy.yahoo.player;
 
 import com.fantasy.yahoo.league.YahooFantasyClient;
 import com.fantasy.yahoo.oauth.YahooOAuthService;
+import com.fantasy.yahoo.player.dto.YahooGoalieStats;
 import com.fantasy.yahoo.player.dto.YahooPlayerResponse;
+import com.fantasy.yahoo.player.dto.YahooSkaterStats;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class YahooPlayerService {
@@ -27,15 +31,24 @@ public class YahooPlayerService {
         this.client = client;
     }
 
-    /** Every player in the given Yahoo game (default "nhl") with their eligible positions. */
-    public List<YahooPlayerResponse> players(String gameKey) {
+    /**
+     * Every player in the given Yahoo game (default "nhl") with identity, headshot, eligible
+     * positions and the requested season's stat line. A blank season means the current season.
+     */
+    public List<YahooPlayerResponse> players(String gameKey, String season) {
         String accessToken = oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID);
         List<YahooPlayerResponse> all = new ArrayList<>();
         for (int page = 0; page < MAX_PAGES; page++) {
-            JsonNode root = client.getGamePlayers(accessToken, gameKey, page * PAGE_SIZE);
-            List<YahooPlayerResponse> pagePlayers = parsePage(root);
-            all.addAll(pagePlayers);
-            if (pagePlayers.size() < PAGE_SIZE) {
+            JsonNode root = client.getGamePlayers(accessToken, gameKey, page * PAGE_SIZE, season);
+            JsonNode playersNode = root.path("fantasy_content").path("game").path(1).path("players");
+            List<JsonNode> entries = numericChildren(playersNode);
+            for (JsonNode entry : entries) {
+                YahooPlayerResponse player = parsePlayer(entry);
+                if (player != null) {
+                    all.add(player);
+                }
+            }
+            if (entries.size() < PAGE_SIZE) {
                 return all;
             }
         }
@@ -44,37 +57,207 @@ public class YahooPlayerService {
         return all;
     }
 
-    private static List<YahooPlayerResponse> parsePage(JsonNode root) {
-        // fantasy_content.game[1].players is a numeric-keyed object of player entries.
-        JsonNode playersNode = root.path("fantasy_content").path("game").path(1).path("players");
-        List<YahooPlayerResponse> players = new ArrayList<>();
-        for (JsonNode entry : numericChildren(playersNode)) {
-            JsonNode attrs = entry.path("player").path(0);
-            String yahooId = null;
-            String fullName = null;
-            String teamAbbrev = null;
-            List<String> eligiblePositions = new ArrayList<>();
-            for (JsonNode attr : attrs) {
-                if (attr.hasNonNull("player_id")) {
-                    yahooId = attr.get("player_id").asText();
-                }
-                if (attr.path("name").hasNonNull("full")) {
-                    fullName = attr.path("name").path("full").asText();
-                }
-                if (attr.hasNonNull("editorial_team_abbr")) {
-                    teamAbbrev = attr.get("editorial_team_abbr").asText();
-                }
-                for (JsonNode pos : attr.path("eligible_positions")) {
-                    if (pos.hasNonNull("position")) {
-                        eligiblePositions.add(pos.get("position").asText());
-                    }
-                }
+    private static YahooPlayerResponse parsePlayer(JsonNode entry) {
+        JsonNode playerArr = entry.path("player");
+        JsonNode attrs = playerArr.path(0);
+        String yahooId = null;
+        String fullName = null;
+        String firstName = null;
+        String lastName = null;
+        String teamAbbrev = null;
+        String displayPosition = null;
+        String positionType = null;
+        String uniformNumber = null;
+        String imageUrl = null;
+        List<String> eligiblePositions = new ArrayList<>();
+        for (JsonNode attr : attrs) {
+            if (attr.hasNonNull("player_id")) {
+                yahooId = attr.get("player_id").asText();
             }
-            if (yahooId != null && fullName != null) {
-                players.add(new YahooPlayerResponse(yahooId, fullName, teamAbbrev, eligiblePositions));
+            JsonNode name = attr.path("name");
+            if (name.hasNonNull("full")) {
+                fullName = name.get("full").asText();
+            }
+            if (name.hasNonNull("first")) {
+                firstName = name.get("first").asText();
+            }
+            if (name.hasNonNull("last")) {
+                lastName = name.get("last").asText();
+            }
+            if (attr.hasNonNull("editorial_team_abbr")) {
+                teamAbbrev = attr.get("editorial_team_abbr").asText();
+            }
+            if (attr.hasNonNull("display_position")) {
+                displayPosition = attr.get("display_position").asText();
+            }
+            if (attr.hasNonNull("position_type")) {
+                positionType = attr.get("position_type").asText();
+            }
+            if (attr.hasNonNull("uniform_number")) {
+                uniformNumber = attr.get("uniform_number").asText();
+            }
+            if (attr.hasNonNull("image_url")) {
+                imageUrl = attr.get("image_url").asText();
+            }
+            for (JsonNode position : attr.path("eligible_positions")) {
+                if (position.hasNonNull("position")) {
+                    eligiblePositions.add(position.get("position").asText());
+                }
             }
         }
-        return players;
+        if (yahooId == null || fullName == null) {
+            return null;
+        }
+        boolean goalie = "G".equals(positionType);
+        Map<Integer, String> stats = parseStats(playerArr);
+        return new YahooPlayerResponse(
+                yahooId,
+                fullName,
+                blankToNull(firstName) != null ? firstName : firstNameOf(fullName),
+                blankToNull(lastName) != null ? lastName : lastNameOf(fullName),
+                teamAbbrev,
+                primaryPosition(displayPosition, eligiblePositions, goalie),
+                parseIntOrNull(uniformNumber),
+                fullImage(imageUrl),
+                goalie,
+                eligiblePositions,
+                goalie ? null : skaterStats(stats),
+                goalie ? goalieStats(stats) : null);
+    }
+
+    /** Flattens Yahoo's {@code player_stats.stats} list into a stat_id → raw value map. */
+    private static Map<Integer, String> parseStats(JsonNode playerArr) {
+        Map<Integer, String> stats = new HashMap<>();
+        for (int i = 1; i < playerArr.size(); i++) {
+            JsonNode statsList = playerArr.path(i).path("player_stats").path("stats");
+            if (!statsList.isArray()) {
+                continue;
+            }
+            for (JsonNode entry : statsList) {
+                JsonNode stat = entry.path("stat");
+                if (stat.hasNonNull("stat_id")) {
+                    stats.put(stat.get("stat_id").asInt(), stat.path("value").asText(null));
+                }
+            }
+        }
+        return stats;
+    }
+
+    private static YahooSkaterStats skaterStats(Map<Integer, String> stats) {
+        return new YahooSkaterStats(
+                intStat(stats, 0),
+                intStat(stats, 1),
+                intStat(stats, 2),
+                intStat(stats, 3),
+                intStat(stats, 4),
+                intStat(stats, 5),
+                intStat(stats, 6),
+                intStat(stats, 8),
+                intStat(stats, 9),
+                intStat(stats, 11),
+                intStat(stats, 12),
+                intStat(stats, 14),
+                doubleStat(stats, 15),
+                intStat(stats, 16),
+                intStat(stats, 17),
+                intStat(stats, 31),
+                intStat(stats, 32),
+                strStat(stats, 34));
+    }
+
+    private static YahooGoalieStats goalieStats(Map<Integer, String> stats) {
+        return new YahooGoalieStats(
+                intStat(stats, 0),
+                intStat(stats, 18),
+                intStat(stats, 19),
+                intStat(stats, 20),
+                intStat(stats, 27),
+                intStat(stats, 24),
+                intStat(stats, 25),
+                intStat(stats, 22),
+                doubleStat(stats, 23),
+                doubleStat(stats, 26));
+    }
+
+    private static String primaryPosition(String displayPosition, List<String> eligible, boolean goalie) {
+        if (goalie) {
+            return "G";
+        }
+        if (displayPosition != null && !displayPosition.isBlank()) {
+            return displayPosition.split(",")[0].trim();
+        }
+        return eligible.isEmpty() ? "C" : eligible.getFirst();
+    }
+
+    /**
+     * Yahoo's {@code image_url} is a resize-proxy URL that embeds the full-resolution source as
+     * its last {@code https://…} segment; return that source for a crisp headshot.
+     */
+    private static String fullImage(String imageUrl) {
+        if (imageUrl == null || imageUrl.isBlank()) {
+            return null;
+        }
+        int sourceStart = imageUrl.lastIndexOf("https://");
+        return sourceStart > 0 ? imageUrl.substring(sourceStart) : imageUrl;
+    }
+
+    private static String firstNameOf(String fullName) {
+        int split = fullName.lastIndexOf(' ');
+        return split > 0 ? fullName.substring(0, split) : fullName;
+    }
+
+    private static String lastNameOf(String fullName) {
+        int split = fullName.lastIndexOf(' ');
+        return split > 0 ? fullName.substring(split + 1) : fullName;
+    }
+
+    private static Integer intStat(Map<Integer, String> stats, int statId) {
+        String value = blankToNull(stats.get(statId));
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(value.replace(",", "").trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Double doubleStat(Map<Integer, String> stats, int statId) {
+        String value = blankToNull(stats.get(statId));
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Double.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static String strStat(Map<Integer, String> stats, int statId) {
+        return blankToNull(stats.get(statId));
+    }
+
+    private static Integer parseIntOrNull(String value) {
+        String trimmed = blankToNull(value);
+        if (trimmed == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(trimmed.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /** Treats null, blank, and Yahoo's "-" placeholder as absent. */
+    private static String blankToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return (trimmed.isEmpty() || trimmed.equals("-")) ? null : trimmed;
     }
 
     private static List<JsonNode> numericChildren(JsonNode node) {
