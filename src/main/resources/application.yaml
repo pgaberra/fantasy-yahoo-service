@@ -51,6 +51,17 @@ yahoo:
     login-base-url: ${YAHOO_LOGIN_BASE_URL:https://api.login.yahoo.com}
     api-base-url: ${YAHOO_API_BASE_URL:https://fantasysports.yahooapis.com/fantasy/v2}
 
+# Player read-model cache: refresh the skaters/goalies tables from Yahoo.
+sync:
+  yahoo-game-key: ${SYNC_YAHOO_GAME_KEY:nhl}
+  # Single starting year (2025 = the 2025-26 season); blank = the current season.
+  yahoo-season: ${SYNC_YAHOO_SEASON:2025}
+  # Scheduled refresh. Disabled by default (local/CI); enable + set a cron in the
+  # deployed envs so the player data refreshes automatically.
+  schedule:
+    enabled: ${SYNC_SCHEDULE_ENABLED:false}
+    cron: ${SYNC_SCHEDULE_CRON:0 0 4 * * *}
+
 springdoc:
   api-docs:
     path: /v3/api-docs
