@@ -17,6 +17,13 @@ import java.time.Instant;
 @Service
 public class YahooOAuthService {
 
+    /**
+     * Reserved app-user id for the single, app-owned Yahoo "service account" whose token is
+     * used for non-user-specific bulk fetches (e.g. the league-wide player list). Real users
+     * are keyed by UUID, so this sentinel can never collide with one.
+     */
+    public static final String SERVICE_ACCOUNT_ID = "__service__";
+
     // Refresh a little before the token actually expires to avoid races near the boundary.
     private static final long EXPIRY_SKEW_SECONDS = 60;
 

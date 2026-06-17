@@ -36,6 +36,12 @@ public class YahooFantasyClient {
         return get(accessToken, "/league/" + leagueKey + "/settings?format=json");
     }
 
+    /** One page (25) of a game's player collection, starting at the given offset. */
+    public JsonNode getGamePlayers(String accessToken, String gameKey, int start) {
+        return get(accessToken,
+                "/game/" + gameKey + "/players;start=" + start + ";count=25?format=json");
+    }
+
     private JsonNode get(String accessToken, String path) {
         String body;
         try {
