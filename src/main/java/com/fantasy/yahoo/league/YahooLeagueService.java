@@ -87,6 +87,7 @@ public class YahooLeagueService {
                     text(stat, "name"),
                     text(stat, "display_name"),
                     text(stat, "position_type"),
+                    displayOnly(stat, "is_only_display_stat"),
                     modifiers.get(statId)));
         }
         return categories;
@@ -137,6 +138,14 @@ public class YahooLeagueService {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private static boolean displayOnly(JsonNode node, String field) {
+        if (!node.hasNonNull(field)) {
+            return false;
+        }
+        JsonNode value = node.get(field);
+        return value.asInt(0) == 1 || value.asBoolean();
     }
 
     private static String firstNonBlank(String a, String b) {
