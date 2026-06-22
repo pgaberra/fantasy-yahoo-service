@@ -3,6 +3,7 @@ plugins {
 	id 'org.springframework.boot' version '4.0.5'
 	id 'io.spring.dependency-management' version '1.1.7'
 	id 'jacoco'
+	id 'com.github.spotbugs' version '6.5.8'
 }
 
 group = 'com.fantasy'
@@ -50,6 +51,9 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'
 	testRuntimeOnly 'com.h2database:h2'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+	// Static analysis: SpotBugs bug patterns + FindSecBugs security rules.
+	spotbugsPlugins 'com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0'
 }
 
 tasks.named('test') {
@@ -75,5 +79,26 @@ jacocoTestReport {
 // Only build the executable Spring Boot jar (skip the non-runnable "-plain" jar)
 // so the Docker image can copy build/libs/*.jar unambiguously.
 tasks.named('jar') {
+	enabled = false
+}
+
+// Static analysis (SpotBugs + FindSecBugs). A few non-actionable patterns are excluded
+// (see config/spotbugs/exclude.xml); the build fails on any remaining finding.
+spotbugs {
+	toolVersion = '4.10.2'
+	effort = com.github.spotbugs.snom.Effort.valueOf('MAX')
+	reportLevel = com.github.spotbugs.snom.Confidence.valueOf('LOW')
+	excludeFilter = file('config/spotbugs/exclude.xml')
+	ignoreFailures = false
+}
+
+tasks.named('spotbugsMain') {
+	reports {
+		xml.required = true
+		html.required = true
+	}
+}
+
+tasks.named('spotbugsTest') {
 	enabled = false
 }

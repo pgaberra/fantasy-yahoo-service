@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!-- Noise in a Spring/record codebase, not actionable defects:
+         SPRING_ENDPOINT flags every @RequestMapping method; EI_EXPOSE_REP(2)
+         flags components storing injected beans and records holding lists. -->
+    <Match>
+        <Bug pattern="SPRING_ENDPOINT,EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <!-- SERVLET_HEADER: InternalApiKeyFilter reads the X-Internal-Api-Key request
+         header by design (the inter-service auth check), not a vulnerability. -->
+    <Match>
+        <Bug pattern="SERVLET_HEADER"/>
+    </Match>
+
+    <!-- REC_CATCH_EXCEPTION (STYLE): we deliberately catch broad Exception at
+         defensive boundaries — wrapping every crypto/decode failure into one
+         IllegalStateException (TokenCipher, OAuthStateCodec) and catching at the
+         background-sync job boundary per the logging convention. -->
+    <Match>
+        <Bug pattern="REC_CATCH_EXCEPTION"/>
+    </Match>
+
+    <!-- URF_UNREAD_*: the Skater/Goalie @Entity read models use public fields by
+         design; Hibernate and Jackson read them reflectively, which SpotBugs can't see. -->
+    <Match>
+        <Bug pattern="URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD"/>
+        <Or>
+            <Class name="com.fantasy.yahoo.players.Skater"/>
+            <Class name="com.fantasy.yahoo.players.Goalie"/>
+        </Or>
+    </Match>
+
+    <!-- CRLF_INJECTION_LOGS: YahooPlayerService strips CR/LF from the interpolated
+         gameKey with String.replace at the call site, but FindSecBugs taint analysis
+         doesn't follow String transforms so it still flags it. Scoped to this class. -->
+    <Match>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
+        <Class name="com.fantasy.yahoo.player.YahooPlayerService"/>
+    </Match>
+</FindBugsFilter>

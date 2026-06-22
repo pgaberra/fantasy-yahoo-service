@@ -53,7 +53,7 @@ public class YahooPlayerService {
             }
         }
         log.warn("Yahoo player pagination hit the {}-page cap for game {}; result may be truncated",
-                MAX_PAGES, gameKey);
+                MAX_PAGES, gameKey.replace("\r", "_").replace("\n", "_"));
         return all;
     }
 
