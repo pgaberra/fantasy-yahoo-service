@@ -56,7 +56,8 @@ class YahooLeagueServiceTest {
                 + "\"scoring_type\":\"head\"},{\"settings\":[{\"scoring_type\":\"head\","
                 + "\"stat_categories\":{\"stats\":["
                 + "{\"stat\":{\"stat_id\":1,\"name\":\"Goals\",\"display_name\":\"G\",\"position_type\":\"P\"}},"
-                + "{\"stat\":{\"stat_id\":2,\"name\":\"Assists\",\"display_name\":\"A\",\"position_type\":\"P\"}}]},"
+                + "{\"stat\":{\"stat_id\":2,\"name\":\"Assists\",\"display_name\":\"A\",\"position_type\":\"P\"}},"
+                + "{\"stat\":{\"stat_id\":24,\"name\":\"Shots Against\",\"display_name\":\"SA\",\"position_type\":\"G\",\"is_only_display_stat\":\"1\"}}]},"
                 + "\"stat_modifiers\":{\"stats\":["
                 + "{\"stat\":{\"stat_id\":1,\"value\":\"3\"}},{\"stat\":{\"stat_id\":2,\"value\":\"2\"}}]},"
                 + "\"roster_positions\":["
@@ -68,9 +69,12 @@ class YahooLeagueServiceTest {
         assertThat(settings.leagueKey()).isEqualTo("453.l.123");
         assertThat(settings.name()).isEqualTo("My League");
         assertThat(settings.scoringType()).isEqualTo("head");
-        assertThat(settings.statCategories()).hasSize(2);
+        assertThat(settings.statCategories()).hasSize(3);
         assertThat(settings.statCategories().getFirst().name()).isEqualTo("Goals");
         assertThat(settings.statCategories().getFirst().pointValue()).isEqualTo(3.0);
+        assertThat(settings.statCategories().getFirst().displayOnly()).isFalse();
+        assertThat(settings.statCategories().get(2).name()).isEqualTo("Shots Against");
+        assertThat(settings.statCategories().get(2).displayOnly()).isTrue();
         assertThat(settings.rosterPositions()).hasSize(2);
         assertThat(settings.rosterPositions().getFirst().position()).isEqualTo("C");
         assertThat(settings.rosterPositions().getFirst().count()).isEqualTo(2);
