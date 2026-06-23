@@ -1,0 +1,34 @@
+name: Qodana
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: qodana-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qodana:
+    name: Qodana
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Report-only: surfaces simplification/optimization findings in the run summary +
+      # SARIF artifact for human review. Never fails the run — some of these inspections
+      # are false positives (e.g. Boolean.TRUE.equals on a value that can be null at
+      # runtime) that must not block.
+      - name: Qodana Scan
+        uses: JetBrains/qodana-action@v2026.1
+        continue-on-error: true
+        with:
+          pr-mode: false
+          upload-result: true
