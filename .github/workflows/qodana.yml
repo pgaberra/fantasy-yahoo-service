@@ -4,9 +4,6 @@ on:
   workflow_dispatch:
   schedule:
     - cron: '0 6 * * 1'
-  # Temporary while validating; removed before merge (final state is weekly + manual).
-  pull_request:
-    branches: [master]
 
 permissions:
   contents: read
@@ -25,6 +22,10 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Report-only: surfaces simplification/optimization findings in the run summary +
+      # SARIF artifact for human review. Never fails the run — some of these inspections
+      # are false positives (e.g. Boolean.TRUE.equals on a value that can be null at
+      # runtime) that must not block.
       - name: Qodana Scan
         uses: JetBrains/qodana-action@v2026.1
         continue-on-error: true
