@@ -1,6 +1,7 @@
 package com.fantasy.yahoo.league;
 
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
+import com.fantasy.yahoo.league.dto.LeagueTeamsResponse;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
 import com.fantasy.yahoo.oauth.YahooOAuthService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -80,6 +81,26 @@ class YahooLeagueServiceTest {
         assertThat(settings.rosterPositions().getFirst().count()).isEqualTo(2);
         assertThat(settings.rosterPositions().get(1).position()).isEqualTo("BN");
         assertThat(settings.rosterPositions().get(1).count()).isEqualTo(4);
+    }
+
+    @Test
+    void teams_parsesNamesAndOwnership() throws Exception {
+        when(oauthService.validAccessToken(USER)).thenReturn("token");
+        when(client.getLeagueTeams("token", "453.l.123")).thenReturn(json(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"453.l.123\",\"name\":\"My League\"},"
+                + "{\"teams\":{"
+                + "\"0\":{\"team\":[[{\"team_key\":\"453.l.123.t.1\"},{\"team_id\":\"1\"},{\"name\":\"Alpha\"}]]},"
+                + "\"1\":{\"team\":[[{\"team_key\":\"453.l.123.t.2\"},{\"team_id\":\"2\"},{\"name\":\"Bravo\"},"
+                + "{\"is_owned_by_current_login\":1}]]},"
+                + "\"count\":2}}]}}"));
+
+        LeagueTeamsResponse response = service().teams(USER, "453.l.123");
+
+        assertThat(response.teams()).hasSize(2);
+        assertThat(response.teams().getFirst().name()).isEqualTo("Alpha");
+        assertThat(response.teams().getFirst().mine()).isFalse();
+        assertThat(response.teams().get(1).name()).isEqualTo("Bravo");
+        assertThat(response.teams().get(1).mine()).isTrue();
     }
 
     private static JsonNode json(String raw) throws Exception {

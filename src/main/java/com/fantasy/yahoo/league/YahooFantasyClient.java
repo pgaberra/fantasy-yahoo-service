@@ -36,6 +36,11 @@ public class YahooFantasyClient {
         return get(accessToken, "/league/" + leagueKey + "/settings?format=json");
     }
 
+    /** A league's teams (names, and which one belongs to the authenticated user). */
+    public JsonNode getLeagueTeams(String accessToken, String leagueKey) {
+        return get(accessToken, "/league/" + leagueKey + "/teams?format=json");
+    }
+
     /**
      * One page (25) of a game's player collection with each player's season stat line,
      * starting at the given offset. When {@code season} is blank Yahoo uses the current season.

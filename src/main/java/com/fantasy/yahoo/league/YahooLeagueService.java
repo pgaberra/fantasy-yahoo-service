@@ -2,6 +2,8 @@ package com.fantasy.yahoo.league;
 
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
 import com.fantasy.yahoo.league.dto.LeagueSummary;
+import com.fantasy.yahoo.league.dto.LeagueTeam;
+import com.fantasy.yahoo.league.dto.LeagueTeamsResponse;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
 import com.fantasy.yahoo.league.dto.RosterSlot;
 import com.fantasy.yahoo.league.dto.StatCategory;
@@ -64,6 +66,31 @@ public class YahooLeagueService {
                 firstNonBlank(text(settings, "scoring_type"), text(meta, "scoring_type")),
                 parseStatCategories(settings),
                 parseRosterPositions(settings));
+    }
+
+    public LeagueTeamsResponse teams(String appUserId, String leagueKey) {
+        JsonNode root = client.getLeagueTeams(oauthService.validAccessToken(appUserId), leagueKey);
+        JsonNode teamsNode = root.path("fantasy_content").path("league").path(1).path("teams");
+
+        List<LeagueTeam> teams = new ArrayList<>();
+        for (JsonNode entry : numericChildren(teamsNode)) {
+            // Each team's metadata is an array of single-key objects; name and the
+            // is_owned_by_current_login marker (present only on the user's team) live inside it.
+            String name = null;
+            boolean mine = false;
+            for (JsonNode attribute : entry.path("team").path(0)) {
+                if (attribute.hasNonNull("name")) {
+                    name = attribute.get("name").asText();
+                }
+                if (attribute.hasNonNull("is_owned_by_current_login")) {
+                    mine = attribute.get("is_owned_by_current_login").asInt(0) == 1;
+                }
+            }
+            if (name != null) {
+                teams.add(new LeagueTeam(name, mine));
+            }
+        }
+        return new LeagueTeamsResponse(teams);
     }
 
     private static List<StatCategory> parseStatCategories(JsonNode settings) {
