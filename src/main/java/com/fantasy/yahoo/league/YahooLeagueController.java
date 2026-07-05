@@ -1,6 +1,7 @@
 package com.fantasy.yahoo.league;
 
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
+import com.fantasy.yahoo.league.dto.LeagueTeamsResponse;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -42,5 +43,16 @@ public class YahooLeagueController {
     public LeagueSettingsResponse settings(@PathVariable String leagueKey,
                                            @RequestParam String appUserId) {
         return leagueService.settings(appUserId, leagueKey);
+    }
+
+    @Operation(summary = "List a league's teams (names + which is the user's own)")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Teams returned"),
+            @ApiResponse(responseCode = "404", description = "User has not connected Yahoo")
+    })
+    @GetMapping("/{leagueKey}/teams")
+    public LeagueTeamsResponse teams(@PathVariable String leagueKey,
+                                     @RequestParam String appUserId) {
+        return leagueService.teams(appUserId, leagueKey);
     }
 }
