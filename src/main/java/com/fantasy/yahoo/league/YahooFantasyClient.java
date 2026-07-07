@@ -33,12 +33,15 @@ public class YahooFantasyClient {
 
     /** A league's settings (scoring categories, roster positions, modifiers). */
     public JsonNode getLeagueSettings(String accessToken, String leagueKey) {
-        return get(accessToken, "/league/" + leagueKey + "/settings?format=json");
+        // leagueKey is caller-supplied — pass it as a URI-template variable so RestClient
+        // URL-encodes it into a single path segment (a stray '/', '?' etc. can't inject path or
+        // query). Format-agnostic: no assumption about Yahoo's key shape.
+        return get(accessToken, "/league/{leagueKey}/settings?format=json", leagueKey);
     }
 
     /** A league's teams (names, and which one belongs to the authenticated user). */
     public JsonNode getLeagueTeams(String accessToken, String leagueKey) {
-        return get(accessToken, "/league/" + leagueKey + "/teams?format=json");
+        return get(accessToken, "/league/{leagueKey}/teams?format=json", leagueKey);
     }
 
     /**
@@ -53,24 +56,25 @@ public class YahooFantasyClient {
                 "/game/" + gameKey + "/players;start=" + start + ";count=25" + stats + "?format=json");
     }
 
-    private JsonNode get(String accessToken, String path) {
+    private JsonNode get(String accessToken, String uriTemplate, Object... uriVariables) {
         String body;
         try {
             body = restClient.get()
-                    .uri(path)
+                    .uri(uriTemplate, uriVariables)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                     .retrieve()
                     .body(String.class);
         } catch (RestClientException e) {
-            throw new IllegalStateException("Yahoo Fantasy API call failed for " + path + ": " + e.getMessage(), e);
+            throw new IllegalStateException(
+                    "Yahoo Fantasy API call failed for " + uriTemplate + ": " + e.getMessage(), e);
         }
         if (body == null || body.isBlank()) {
-            throw new IllegalStateException("Yahoo Fantasy API returned an empty body for " + path);
+            throw new IllegalStateException("Yahoo Fantasy API returned an empty body for " + uriTemplate);
         }
         try {
             return objectMapper.readTree(body);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Yahoo Fantasy API returned unparseable JSON for " + path, e);
+            throw new IllegalStateException("Yahoo Fantasy API returned unparseable JSON for " + uriTemplate, e);
         }
     }
 }

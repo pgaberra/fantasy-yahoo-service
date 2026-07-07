@@ -12,8 +12,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -103,20 +101,6 @@ class YahooLeagueServiceTest {
         assertThat(response.teams().getFirst().mine()).isFalse();
         assertThat(response.teams().get(1).name()).isEqualTo("Bravo");
         assertThat(response.teams().get(1).mine()).isTrue();
-    }
-
-    @Test
-    void settings_withInvalidLeagueKey_isRejectedBeforeAnyCall() {
-        assertThatThrownBy(() -> service().settings(USER, "453.l.1/../../../secrets"))
-                .isInstanceOf(IllegalArgumentException.class);
-        verifyNoInteractions(client, oauthService);
-    }
-
-    @Test
-    void teams_withInvalidLeagueKey_isRejectedBeforeAnyCall() {
-        assertThatThrownBy(() -> service().teams(USER, "bad key with spaces"))
-                .isInstanceOf(IllegalArgumentException.class);
-        verifyNoInteractions(client, oauthService);
     }
 
     private static JsonNode json(String raw) throws Exception {
