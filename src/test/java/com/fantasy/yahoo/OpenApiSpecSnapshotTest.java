@@ -1,6 +1,7 @@
 package com.fantasy.yahoo;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 
@@ -25,14 +26,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * then commit the updated specs/openapi.yaml.
  *
- * The api-key filter is disabled when no key is configured (the default in tests),
- * so /v3/api-docs.yaml is reachable here without a header.
+ * /v3/api-docs.yaml is behind the internal-key filter, so the request sends the test key.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class OpenApiSpecSnapshotTest {
 
     @LocalServerPort
     private int port;
+
+    @Value("${internal.api-key}")
+    private String internalApiKey;
 
     private static final Path SPEC = Path.of("specs", "openapi.yaml");
 
@@ -58,7 +61,9 @@ class OpenApiSpecSnapshotTest {
 
     private String fetchSpec() throws Exception {
         HttpResponse<String> response = HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v3/api-docs.yaml")).GET().build(),
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v3/api-docs.yaml"))
+                        .header("X-Internal-Api-Key", internalApiKey)
+                        .GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(200);
         return response.body();

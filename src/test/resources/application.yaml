@@ -15,3 +15,8 @@ spring:
 # committed specs/openapi.yaml (the test resources otherwise shadow application.yaml).
 springdoc:
   default-produces-media-type: application/json
+
+# Non-secret dummy key so the context boots (the filter requires a key). Full-context tests
+# that call a protected endpoint send this value in the X-Internal-Api-Key header.
+internal:
+  api-key: test-internal-key
