@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 /**
  * Reads a user's NHL fantasy leagues and a league's settings from Yahoo, parsing Yahoo's
@@ -25,22 +24,12 @@ import java.util.regex.Pattern;
 @Service
 public class YahooLeagueService {
 
-    // Yahoo league keys look like "nhl.l.12345" / "453.l.123456" — letters, digits and . _ - only.
-    // Validate before it's interpolated into the Yahoo API path so it can't inject path/query.
-    private static final Pattern LEAGUE_KEY = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
-
     private final YahooOAuthService oauthService;
     private final YahooFantasyClient client;
 
     public YahooLeagueService(YahooOAuthService oauthService, YahooFantasyClient client) {
         this.oauthService = oauthService;
         this.client = client;
-    }
-
-    private static void requireValidLeagueKey(String leagueKey) {
-        if (leagueKey == null || !LEAGUE_KEY.matcher(leagueKey).matches()) {
-            throw new IllegalArgumentException("Invalid league key");
-        }
     }
 
     public LeaguesResponse leagues(String appUserId) {
@@ -66,7 +55,6 @@ public class YahooLeagueService {
     }
 
     public LeagueSettingsResponse settings(String appUserId, String leagueKey) {
-        requireValidLeagueKey(leagueKey);
         JsonNode root = client.getLeagueSettings(oauthService.validAccessToken(appUserId), leagueKey);
         JsonNode leagueArray = root.path("fantasy_content").path("league");
         JsonNode meta = leagueArray.path(0);
@@ -81,7 +69,6 @@ public class YahooLeagueService {
     }
 
     public LeagueTeamsResponse teams(String appUserId, String leagueKey) {
-        requireValidLeagueKey(leagueKey);
         JsonNode root = client.getLeagueTeams(oauthService.validAccessToken(appUserId), leagueKey);
         JsonNode teamsNode = root.path("fantasy_content").path("league").path(1).path("teams");
 
