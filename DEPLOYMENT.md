@@ -76,5 +76,7 @@ The BFF reaches this service over the internal network (not the public domain):
 
 Every `/api/**` request must carry `X-Internal-Api-Key: <secret>`, **except**
 `/api/v1/yahoo/oauth/callback` (Yahoo's browser redirect can't send it — secured instead by
-the signed `state`) and `/actuator/**`. When `INTERNAL_API_KEY` is unset (local dev) the
-filter is disabled. Tokens are always stored encrypted (AES-GCM) regardless of environment.
+the signed `state`) and the `/actuator/health` + `/actuator/info` probes. `INTERNAL_API_KEY`
+is **required in every environment**: the service **refuses to start** if it is blank (fail
+closed) rather than serving an unauthenticated API, so set it locally too. Tokens are always
+stored encrypted (AES-GCM) regardless of environment.

@@ -34,7 +34,7 @@ Swagger UI: http://localhost:8088/swagger-ui.html
 |---|---|---|
 | `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/`DB_PASSWORD` | localhost / 5432 / fantasy_yahoo / fantasy / _(none)_ | Postgres connection |
 | `PORT` | 8088 | HTTP port |
-| `INTERNAL_API_KEY` | _(blank)_ | If set, every request (except `/actuator/**` and the OAuth callback) must send `X-Internal-Api-Key` |
+| `INTERNAL_API_KEY` | _(required)_ | Shared BFF secret. **Required in every env** — the service refuses to start if blank. Every request except `/actuator/health`+`/info` and the OAuth callback must send `X-Internal-Api-Key` |
 | `YAHOO_CLIENT_ID` / `YAHOO_CLIENT_SECRET` | _(blank)_ | Yahoo developer app credentials |
 | `YAHOO_REDIRECT_URI` | localhost callback | Must match the URI registered with Yahoo exactly |
 | `YAHOO_STATE_SECRET` | _(blank)_ | HMAC key for the OAuth state |

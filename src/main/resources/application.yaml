@@ -24,8 +24,10 @@ spring:
 server:
   port: ${PORT:8088}
 
-# Pre-shared secret the BFF sends as X-Internal-Api-Key. When blank (local dev / CI)
-# the InternalApiKeyFilter is disabled so the service is open.
+# Pre-shared secret the BFF sends as X-Internal-Api-Key. Required in every environment: the
+# app refuses to start if this is blank, so it never serves an unauthenticated internal API
+# (this service holds per-user Yahoo OAuth tokens). Set INTERNAL_API_KEY when running locally
+# too; tests supply their own key.
 internal:
   api-key: ${INTERNAL_API_KEY:}
 
