@@ -1,17 +1,20 @@
 package com.fantasy.yahoo.oauth;
 
 import com.fantasy.yahoo.config.YahooOAuthProperties;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Owns the per-user Yahoo OAuth 2.0 authorization-code flow and token lifecycle.
  *
- * connect: build the Yahoo consent URL with a signed `state` carrying the app user id.
- * callback: verify state, exchange the code for tokens, store them encrypted.
+ * connect: build the Yahoo consent URL with a signed `state` carrying the app user id and a
+ *          single-use nonce recorded server-side.
+ * callback: verify state, consume the nonce, exchange the code for tokens, store them encrypted.
  * access: hand out a valid access token, refreshing it transparently when expired.
  */
 @Service
@@ -32,22 +35,30 @@ public class YahooOAuthService {
     private final YahooTokenClient tokenClient;
     private final TokenCipher cipher;
     private final YahooOAuthTokenRepository repository;
+    private final PendingOAuthStateRepository pendingStateRepository;
 
     public YahooOAuthService(YahooOAuthProperties props,
                              OAuthStateCodec stateCodec,
                              YahooTokenClient tokenClient,
                              TokenCipher cipher,
-                             YahooOAuthTokenRepository repository) {
+                             YahooOAuthTokenRepository repository,
+                             PendingOAuthStateRepository pendingStateRepository) {
         this.props = props;
         this.stateCodec = stateCodec;
         this.tokenClient = tokenClient;
         this.cipher = cipher;
         this.repository = repository;
+        this.pendingStateRepository = pendingStateRepository;
     }
 
     /** The Yahoo consent URL the browser should be sent to, for the given app user. */
+    @Transactional
     public String buildAuthorizeUrl(String appUserId) {
-        String state = stateCodec.encode(appUserId, Instant.now());
+        Instant now = Instant.now();
+        String nonce = UUID.randomUUID().toString();
+        pendingStateRepository.save(
+                new PendingOAuthState(nonce, appUserId, now.plusSeconds(stateCodec.ttlSeconds()), now));
+        String state = stateCodec.encode(appUserId, nonce, now);
         return UriComponentsBuilder.fromUriString(props.loginBaseUrl())
                 .path("/oauth2/request_auth")
                 .queryParam("client_id", props.clientId())
@@ -59,13 +70,29 @@ public class YahooOAuthService {
                 .toUriString();
     }
 
-    /** Handles the Yahoo callback: verifies state, exchanges the code, stores tokens. */
+    /** Handles the Yahoo callback: verifies + consumes the state, exchanges the code, stores tokens. */
     @Transactional
     public void handleCallback(String code, String state) {
         Instant now = Instant.now();
-        String appUserId = stateCodec.decodeAndVerify(state, now);
+        OAuthStateCodec.VerifiedState verified = stateCodec.decodeAndVerify(state, now);
+        // Single-use: the nonce must match a pending authorization this service issued. Consuming
+        // it here means the same state can never be replayed, and a state we never issued (no
+        // matching row) is rejected before any token exchange happens.
+        PendingOAuthState pending = pendingStateRepository.findById(verified.nonce())
+                .orElseThrow(() -> new IllegalArgumentException("Unknown or already-used OAuth state"));
+        pendingStateRepository.delete(pending);
+        if (!pending.getAppUserId().equals(verified.appUserId())) {
+            throw new IllegalArgumentException("OAuth state does not match its pending authorization");
+        }
         YahooTokenClient.TokenResponse tokens = tokenClient.exchangeCode(code);
-        upsert(appUserId, tokens, now);
+        upsert(verified.appUserId(), tokens, now);
+    }
+
+    /** Drops pending states whose TTL has passed so the table stays small. */
+    @Scheduled(cron = "${yahoo.oauth.pending-state-purge-cron:0 20 * * * *}")
+    @Transactional
+    public void purgeExpiredPendingStates() {
+        pendingStateRepository.deleteByExpiresAtBefore(Instant.now());
     }
 
     public boolean isConnected(String appUserId) {

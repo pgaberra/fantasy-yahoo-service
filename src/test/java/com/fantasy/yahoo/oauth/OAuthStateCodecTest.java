@@ -16,20 +16,22 @@ class OAuthStateCodecTest {
     }
 
     @Test
-    void encodeThenDecode_returnsAppUserId() {
+    void encodeThenDecode_returnsAppUserIdAndNonce() {
         OAuthStateCodec codec = codec("state-signing-secret");
         Instant now = Instant.ofEpochSecond(1_000_000);
 
-        String state = codec.encode("user-42", now);
+        String state = codec.encode("user-42", "nonce-9", now);
 
-        assertThat(codec.decodeAndVerify(state, now)).isEqualTo("user-42");
+        OAuthStateCodec.VerifiedState decoded = codec.decodeAndVerify(state, now);
+        assertThat(decoded.appUserId()).isEqualTo("user-42");
+        assertThat(decoded.nonce()).isEqualTo("nonce-9");
     }
 
     @Test
     void decode_withTamperedSignature_fails() {
         OAuthStateCodec codec = codec("state-signing-secret");
         Instant now = Instant.ofEpochSecond(1_000_000);
-        String state = codec.encode("user-42", now);
+        String state = codec.encode("user-42", "nonce-9", now);
         String tampered = state.substring(0, state.length() - 2) + "xy";
 
         assertThatThrownBy(() -> codec.decodeAndVerify(tampered, now))
@@ -39,7 +41,7 @@ class OAuthStateCodecTest {
     @Test
     void decode_withDifferentSecret_fails() {
         Instant now = Instant.ofEpochSecond(1_000_000);
-        String state = codec("secret-a").encode("user-42", now);
+        String state = codec("secret-a").encode("user-42", "nonce-9", now);
 
         assertThatThrownBy(() -> codec("secret-b").decodeAndVerify(state, now))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -48,7 +50,7 @@ class OAuthStateCodecTest {
     @Test
     void decode_whenExpired_fails() {
         OAuthStateCodec codec = codec("state-signing-secret");
-        String state = codec.encode("user-42", Instant.ofEpochSecond(0));
+        String state = codec.encode("user-42", "nonce-9", Instant.ofEpochSecond(0));
 
         assertThatThrownBy(() -> codec.decodeAndVerify(state, Instant.ofEpochSecond(100_000)))
                 .isInstanceOf(IllegalArgumentException.class);
