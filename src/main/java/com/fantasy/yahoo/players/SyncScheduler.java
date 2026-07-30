@@ -8,8 +8,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Refreshes the cached player read model on a schedule. The cron is always registered
- * (default daily 04:00) but no-ops unless sync.schedule.enabled=true — enabled in the
- * deployed envs, off locally / in CI.
+ * (default daily 04:00) but no-ops unless sync.schedule.enabled=true (enabled in the deployed
+ * envs, off locally / in CI), and is skipped while sync.disabled=true — the off-season kill
+ * switch that keeps the daily Yahoo 403 out of the logs and Sentry.
  */
 @Component
 public class SyncScheduler {
@@ -18,16 +19,19 @@ public class SyncScheduler {
 
     private final SyncService syncService;
     private final boolean enabled;
+    private final boolean disabled;
 
     public SyncScheduler(SyncService syncService,
-                         @Value("${sync.schedule.enabled:false}") boolean enabled) {
+                         @Value("${sync.schedule.enabled:false}") boolean enabled,
+                         @Value("${sync.disabled:false}") boolean disabled) {
         this.syncService = syncService;
         this.enabled = enabled;
+        this.disabled = disabled;
     }
 
     @Scheduled(cron = "${sync.schedule.cron:0 0 4 * * *}")
     public void scheduledSync() {
-        if (!enabled) {
+        if (!enabled || disabled) {
             return;
         }
         try {
