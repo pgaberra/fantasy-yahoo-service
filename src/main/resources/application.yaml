@@ -58,6 +58,10 @@ sync:
   yahoo-game-key: ${SYNC_YAHOO_GAME_KEY:nhl}
   # Single starting year (2025 = the 2025-26 season); blank = the current season.
   yahoo-season: ${SYNC_YAHOO_SEASON:2025}
+  # Off-season kill switch: true makes the scheduled sync skip its run instead of calling
+  # Yahoo (between NHL seasons there is no active game, so the call 403s), keeping the daily
+  # failure out of the logs and Sentry. Flip together with the web's YAHOO_SYNC_DISABLED.
+  disabled: ${SYNC_YAHOO_DISABLED:false}
   # Scheduled refresh. Disabled by default (local/CI); enable + set a cron in the
   # deployed envs so the player data refreshes automatically.
   schedule:
