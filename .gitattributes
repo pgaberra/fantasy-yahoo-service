@@ -1,3 +1,12 @@
+# Check every text file out with LF, on every platform. Without this, a Windows checkout gets
+# CRLF working copies, and any formatter or generator that rewrites files then shows the whole
+# tree as modified with no content change, burying the real diff underneath.
+* text=auto eol=lf
+
+/gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
+
 # Keep the generated OpenAPI spec LF-normalised so it diffs cleanly between
 # Windows dev machines and Linux CI runners.
 specs/*.yaml text eol=lf
