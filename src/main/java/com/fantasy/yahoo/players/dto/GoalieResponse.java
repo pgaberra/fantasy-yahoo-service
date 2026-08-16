@@ -18,6 +18,8 @@ public record GoalieResponse(
         List<String> eligiblePositions,
         Integer sweaterNumber,
         String teamAbbrev,
+        @Schema(description = "Yahoo's source image URL, present only when a thumbnail is served "
+                + "at /api/v1/players/{id}/headshot — clients should render that endpoint, not this URL")
         String headshot,
         Integer gamesPlayed,
         Integer gamesStarted,

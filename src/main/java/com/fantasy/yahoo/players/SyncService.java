@@ -61,6 +61,7 @@ public class SyncService {
     private final SkaterSeasonRepository skaterSeasonRepository;
     private final GoalieSeasonRepository goalieSeasonRepository;
     private final SyncRunRepository syncRunRepository;
+    private final HeadshotSyncService headshotSyncService;
     private final int season;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -71,6 +72,7 @@ public class SyncService {
                        SkaterSeasonRepository skaterSeasonRepository,
                        GoalieSeasonRepository goalieSeasonRepository,
                        SyncRunRepository syncRunRepository,
+                       HeadshotSyncService headshotSyncService,
                        @Value("${sync.yahoo-season}") int season) {
         this.yahooPlayerService = yahooPlayerService;
         this.skaterRepository = skaterRepository;
@@ -78,6 +80,7 @@ public class SyncService {
         this.skaterSeasonRepository = skaterSeasonRepository;
         this.goalieSeasonRepository = goalieSeasonRepository;
         this.syncRunRepository = syncRunRepository;
+        this.headshotSyncService = headshotSyncService;
         this.season = season;
     }
 
@@ -165,6 +168,8 @@ public class SyncService {
         skaterRepository.deleteAllById(minus(previousSkaterIds, currentSkaterIds));
         goalieRepository.deleteAllById(minus(previousGoalieIds, currentGoalieIds));
 
+        refreshHeadshots(skaters, goalies);
+
         Set<Long> previousIds = union(previousSkaterIds, previousGoalieIds);
         Set<Long> currentIds = union(currentSkaterIds, currentGoalieIds);
         List<String> added = labelsFor(minus(currentIds, previousIds), currentLabels);
@@ -185,6 +190,30 @@ public class SyncService {
         run.added = toJson(added);
         run.removed = toJson(removed);
         return syncRunRepository.save(run);
+    }
+
+    /**
+     * The read model is what a sync exists to produce; the thumbnails are a rendering of it. An
+     * image CDN that will not answer must therefore not turn a successful sync into a failed one
+     * — the next run picks the images up again.
+     */
+    private void refreshHeadshots(List<Skater> skaters, List<Goalie> goalies) {
+        Map<Long, String> sources = new HashMap<>();
+        for (Skater s : skaters) {
+            if (s.headshot != null && !s.headshot.isBlank()) {
+                sources.put(s.id, s.headshot);
+            }
+        }
+        for (Goalie g : goalies) {
+            if (g.headshot != null && !g.headshot.isBlank()) {
+                sources.put(g.id, g.headshot);
+            }
+        }
+        try {
+            headshotSyncService.refresh(sources);
+        } catch (Exception e) {
+            log.error("Headshot refresh failed; player data was synced without it", e);
+        }
     }
 
     public List<SyncRunResponse> getRuns(int limit) {

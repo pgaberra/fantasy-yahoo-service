@@ -31,9 +31,12 @@ class PlayerServiceTest {
     @Mock
     private GoalieSeasonRepository goalieSeasonRepository;
 
+    @Mock
+    private PlayerHeadshotRepository headshotRepository;
+
     private PlayerService playerService() {
         return new PlayerService(skaterRepository, goalieRepository,
-                skaterSeasonRepository, goalieSeasonRepository);
+                skaterSeasonRepository, goalieSeasonRepository, headshotRepository);
     }
 
     @Test
@@ -75,6 +78,23 @@ class PlayerServiceTest {
         assertThat(playerService().getSkaters(2026).getFirst().gamesPlayed()).isEqualTo(4);
     }
 
+    /**
+     * The field is what tells a client there is a picture to draw. Reporting one for a player
+     * whose thumbnail never made it through the sync would point the client at a 404.
+     */
+    @Test
+    void reportsAHeadshotOnlyForPlayersWhoseThumbnailWasStored() {
+        when(skaterRepository.findAllByOrderByLastNameAscFirstNameAsc())
+                .thenReturn(List.of(skater(1), skater(2)));
+        when(skaterSeasonRepository.findAllBySeason(2025)).thenReturn(List.of());
+        when(headshotRepository.findAllPlayerIds()).thenReturn(List.of(1L));
+
+        List<SkaterResponse> skaters = playerService().getSkaters(2025);
+
+        assertThat(skaters.getFirst().headshot()).isEqualTo("https://images.test/1.png");
+        assertThat(skaters.get(1).headshot()).isNull();
+    }
+
     private static Skater skater(long id) {
         Skater skater = new Skater();
         skater.id = id;
@@ -83,6 +103,7 @@ class PlayerServiceTest {
         skater.position = "C";
         skater.teamAbbrev = "EDM";
         skater.yahooPositions = "C,LW";
+        skater.headshot = "https://images.test/" + id + ".png";
         skater.syncedAt = Instant.parse("2026-08-16T04:00:00Z");
         return skater;
     }
