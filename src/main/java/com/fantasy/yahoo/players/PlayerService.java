@@ -6,52 +6,77 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
+/**
+ * Serves the player pool as it is now, with the stat line of whichever season the caller asks
+ * for. A player with no row for that season comes back with the identity and no numbers, which
+ * is the honest answer for a rookie, a call-up, or anyone who did not play that year.
+ */
 @Service
 public class PlayerService {
 
     private final SkaterRepository skaterRepository;
     private final GoalieRepository goalieRepository;
+    private final SkaterSeasonRepository skaterSeasonRepository;
+    private final GoalieSeasonRepository goalieSeasonRepository;
 
-    public PlayerService(SkaterRepository skaterRepository, GoalieRepository goalieRepository) {
+    public PlayerService(SkaterRepository skaterRepository,
+                         GoalieRepository goalieRepository,
+                         SkaterSeasonRepository skaterSeasonRepository,
+                         GoalieSeasonRepository goalieSeasonRepository) {
         this.skaterRepository = skaterRepository;
         this.goalieRepository = goalieRepository;
+        this.skaterSeasonRepository = skaterSeasonRepository;
+        this.goalieSeasonRepository = goalieSeasonRepository;
     }
 
     @Transactional(readOnly = true)
-    public List<SkaterResponse> getSkaters() {
+    public List<SkaterResponse> getSkaters(int season) {
+        Map<Long, SkaterSeason> stats = new HashMap<>();
+        for (SkaterSeason line : skaterSeasonRepository.findAllBySeason(season)) {
+            stats.put(line.playerId, line);
+        }
         return skaterRepository.findAllByOrderByLastNameAscFirstNameAsc().stream()
-                .map(PlayerService::toSkaterResponse)
+                .map(skater -> toSkaterResponse(skater, stats.get(skater.id)))
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public List<GoalieResponse> getGoalies() {
+    public List<GoalieResponse> getGoalies(int season) {
+        Map<Long, GoalieSeason> stats = new HashMap<>();
+        for (GoalieSeason line : goalieSeasonRepository.findAllBySeason(season)) {
+            stats.put(line.playerId, line);
+        }
         return goalieRepository.findAllByOrderByLastNameAscFirstNameAsc().stream()
-                .map(PlayerService::toGoalieResponse)
+                .map(goalie -> toGoalieResponse(goalie, stats.get(goalie.id)))
                 .toList();
     }
 
-    private static SkaterResponse toSkaterResponse(Skater s) {
+    private static SkaterResponse toSkaterResponse(Skater s, SkaterSeason line) {
+        SkaterSeason stats = line == null ? new SkaterSeason() : line;
         return new SkaterResponse(
                 s.id, s.firstName, s.lastName, s.position,
                 eligiblePositions(s.yahooPositions, s.position),
                 s.sweaterNumber, s.teamAbbrev, s.headshot,
-                s.gamesPlayed, s.goals, s.assists, s.points, s.plusMinus, s.pim,
-                s.powerPlayGoals, s.powerPlayPoints, s.shorthandedGoals, s.shorthandedPoints,
-                s.gameWinningGoals, s.shots, s.shootingPctg, s.avgToi,
-                s.faceoffWinningPctg, s.hits, s.blockedShots,
-                s.totalFaceoffWins, s.totalFaceoffLosses);
+                stats.gamesPlayed, stats.goals, stats.assists, stats.points, stats.plusMinus,
+                stats.pim, stats.powerPlayGoals, stats.powerPlayPoints, stats.shorthandedGoals,
+                stats.shorthandedPoints, stats.gameWinningGoals, stats.shots, stats.shootingPctg,
+                stats.avgToi, stats.faceoffWinningPctg, stats.hits, stats.blockedShots,
+                stats.totalFaceoffWins, stats.totalFaceoffLosses);
     }
 
-    private static GoalieResponse toGoalieResponse(Goalie g) {
+    private static GoalieResponse toGoalieResponse(Goalie g, GoalieSeason line) {
+        GoalieSeason stats = line == null ? new GoalieSeason() : line;
         return new GoalieResponse(
                 g.id, g.firstName, g.lastName, g.position,
                 eligiblePositions(g.yahooPositions, "G"),
                 g.sweaterNumber, g.teamAbbrev, g.headshot,
-                g.gamesPlayed, g.gamesStarted, g.wins, g.losses, g.shutouts,
-                g.shotsAgainst, g.saves, g.goalsAgainst, g.goalsAgainstAvg, g.savePctg);
+                stats.gamesPlayed, stats.gamesStarted, stats.wins, stats.losses, stats.shutouts,
+                stats.shotsAgainst, stats.saves, stats.goalsAgainst, stats.goalsAgainstAvg,
+                stats.savePctg);
     }
 
     /** Yahoo eligible positions (comma-joined), or the player's primary position if absent. */

@@ -55,18 +55,11 @@ yahoo:
 
 # Player read-model cache: refresh the skaters/goalies tables from Yahoo.
 sync:
-  yahoo-game-key: ${SYNC_YAHOO_GAME_KEY:nhl}
-  # Single starting year (2025 = the 2025-26 season); blank = the current season. Note this
-  # picks the season's *stats*; the player list itself comes from whichever season's game
-  # `yahoo-game-key` names, and "nhl" is Yahoo's alias for the current one.
+  # The season being collected, as a start year (2025 = the 2025-26 season). A run caches the
+  # current player pool plus this season's stat line; earlier seasons are left alone. Move it
+  # forward when a new season starts — what the app *shows* is a separate choice, made by the
+  # BFF, so collecting 2026 does not disturb a 2025 reference column.
   yahoo-season: ${SYNC_YAHOO_SEASON:2025}
-  # Whether a run rewrites the cached stat lines. False keeps them and refreshes identity only
-  # (name, team, number, eligible positions, headshot) — which is what you want between
-  # seasons, where the roster to cache is the new season's while the stats to cache are last
-  # season's and finished. Since a sync is a full replace, leaving this on would let a fetch
-  # without a stat line blank the one we hold. Turn it back on once the cached stats are ones
-  # that still move.
-  refresh-stats: ${SYNC_REFRESH_STATS:true}
   # Off-season kill switch: true makes the scheduled sync skip its run instead of calling
   # Yahoo (between NHL seasons there is no active game, so the call 403s), keeping the daily
   # failure out of the logs and Sentry. Flip together with the web's YAHOO_SYNC_DISABLED.

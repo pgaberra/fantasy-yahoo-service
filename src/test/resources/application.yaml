@@ -20,3 +20,9 @@ springdoc:
 # that call a protected endpoint send this value in the X-Internal-Api-Key header.
 internal:
   api-key: test-internal-key
+
+# The season a sync collects has no default in the app — a run has to know which season it is
+# writing, and guessing would file one season's numbers under another. These test resources
+# shadow application.yaml, so the value is set here rather than inherited.
+sync:
+  yahoo-season: 2025
