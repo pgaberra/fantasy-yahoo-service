@@ -29,18 +29,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Yahoo's position type, upserts and deletes stale rows, and records each run + diff. If the
  * Yahoo fetch fails or returns nothing the run is recorded as failed and existing data is kept.
  *
- * <p>A sync is a full replace, so a fetch that comes back without a stat line would blank the
- * one we hold. That matters between seasons: the roster we want is the new season's, while the
- * stats we want are last season's, which are finished and cannot change. With
- * {@code sync.refresh-stats=false} a run therefore refreshes identity — name, team, number,
- * eligible positions, headshot — and carries each player's stored stat line across untouched.
- * A player new to the pool has none to carry, which is the right answer for a rookie with no
- * season behind them. Turn it back on when the stats being cached are ones that still move.
+ * <p>A run writes two things: the player pool as it is now, and the stat line for the one season
+ * it is collecting ({@code sync.yahoo-season}). Earlier seasons are never touched, so pointing
+ * the sync at a new season starts filling that one in while the finished one stays exactly as
+ * it was — which is what lets the app collect this season and still show last season's numbers.
  */
 @Service
 public class SyncService {
 
     private static final Logger log = LoggerFactory.getLogger(SyncService.class);
+
+    /** Yahoo's alias for the game that is current — the pool we cache is always the live one. */
+    private static final String GAME_KEY = "nhl";
 
     // Own Jackson 2 mapper for the added/removed JSON columns: Spring Boot 4's bean is
     // Jackson 3, so we don't inject one (same pattern as YahooFantasyClient).
@@ -58,27 +58,27 @@ public class SyncService {
     private final YahooPlayerService yahooPlayerService;
     private final SkaterRepository skaterRepository;
     private final GoalieRepository goalieRepository;
+    private final SkaterSeasonRepository skaterSeasonRepository;
+    private final GoalieSeasonRepository goalieSeasonRepository;
     private final SyncRunRepository syncRunRepository;
-    private final String gameKey;
-    private final String season;
-    private final boolean refreshStats;
+    private final int season;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     public SyncService(YahooPlayerService yahooPlayerService,
                        SkaterRepository skaterRepository,
                        GoalieRepository goalieRepository,
+                       SkaterSeasonRepository skaterSeasonRepository,
+                       GoalieSeasonRepository goalieSeasonRepository,
                        SyncRunRepository syncRunRepository,
-                       @Value("${sync.yahoo-game-key:nhl}") String gameKey,
-                       @Value("${sync.yahoo-season:}") String season,
-                       @Value("${sync.refresh-stats:true}") boolean refreshStats) {
+                       @Value("${sync.yahoo-season}") int season) {
         this.yahooPlayerService = yahooPlayerService;
         this.skaterRepository = skaterRepository;
         this.goalieRepository = goalieRepository;
+        this.skaterSeasonRepository = skaterSeasonRepository;
+        this.goalieSeasonRepository = goalieSeasonRepository;
         this.syncRunRepository = syncRunRepository;
-        this.gameKey = gameKey;
         this.season = season;
-        this.refreshStats = refreshStats;
     }
 
     public boolean isRunning() {
@@ -102,20 +102,18 @@ public class SyncService {
 
     private SyncRun runSync(Instant started) {
         Map<Long, String> previousLabels = new HashMap<>();
-        Map<Long, Skater> previousSkaters = new HashMap<>();
-        Map<Long, Goalie> previousGoalies = new HashMap<>();
+        Set<Long> previousSkaterIds = new HashSet<>();
+        Set<Long> previousGoalieIds = new HashSet<>();
         for (Skater s : skaterRepository.findAll()) {
-            previousSkaters.put(s.id, s);
+            previousSkaterIds.add(s.id);
             previousLabels.put(s.id, label(s.firstName, s.lastName, s.teamAbbrev));
         }
         for (Goalie g : goalieRepository.findAll()) {
-            previousGoalies.put(g.id, g);
+            previousGoalieIds.add(g.id);
             previousLabels.put(g.id, label(g.firstName, g.lastName, g.teamAbbrev));
         }
-        Set<Long> previousSkaterIds = new HashSet<>(previousSkaters.keySet());
-        Set<Long> previousGoalieIds = new HashSet<>(previousGoalies.keySet());
 
-        List<YahooPlayerResponse> players = yahooPlayerService.players(gameKey, season);
+        List<YahooPlayerResponse> players = yahooPlayerService.players(GAME_KEY, String.valueOf(season));
         if (players.isEmpty()) {
             // Never wipe the read model on an empty fetch — Yahoo is the only source.
             throw new IllegalStateException("Yahoo returned no players; preserving existing data");
@@ -124,15 +122,19 @@ public class SyncService {
         Instant now = Instant.now();
         List<Skater> skaters = new ArrayList<>();
         List<Goalie> goalies = new ArrayList<>();
+        List<SkaterSeason> skaterStats = new ArrayList<>();
+        List<GoalieSeason> goalieStats = new ArrayList<>();
         for (YahooPlayerResponse player : players) {
             Long id = parseId(player.yahooId());
             if (id == null) {
                 continue;
             }
             if (player.goalie()) {
-                goalies.add(toGoalie(id, player, now, previousGoalies.get(id)));
+                goalies.add(toGoalie(id, player, now));
+                goalieStats.add(toGoalieSeason(id, player.goalieStats(), now));
             } else {
-                skaters.add(toSkater(id, player, now, previousSkaters.get(id)));
+                skaters.add(toSkater(id, player, now));
+                skaterStats.add(toSkaterSeason(id, player.skaterStats(), now));
             }
         }
 
@@ -157,6 +159,9 @@ public class SyncService {
 
         skaterRepository.saveAll(skaters);
         goalieRepository.saveAll(goalies);
+        skaterSeasonRepository.saveAll(skaterStats);
+        goalieSeasonRepository.saveAll(goalieStats);
+        // The stat rows of a departed player go with them: the tables cascade on the identity.
         skaterRepository.deleteAllById(minus(previousSkaterIds, currentSkaterIds));
         goalieRepository.deleteAllById(minus(previousGoalieIds, currentGoalieIds));
 
@@ -166,9 +171,8 @@ public class SyncService {
         List<String> removed = labelsFor(minus(previousIds, currentIds), previousLabels);
 
         log.info("Player sync complete: {} skaters, {} goalies; +{} added, -{} removed; "
-                        + "stat lines {}",
-                skaters.size(), goalies.size(), added.size(), removed.size(),
-                refreshStats ? "refreshed" : "carried across");
+                        + "stat lines written for {}",
+                skaters.size(), goalies.size(), added.size(), removed.size(), season);
 
         SyncRun run = new SyncRun();
         run.startedAt = started;
@@ -274,7 +278,7 @@ public class SyncService {
         }
     }
 
-    private Skater toSkater(Long id, YahooPlayerResponse p, Instant now, Skater previous) {
+    private static Skater toSkater(Long id, YahooPlayerResponse p, Instant now) {
         Skater e = new Skater();
         e.id = id;
         e.firstName = p.firstName();
@@ -283,17 +287,16 @@ public class SyncService {
         e.sweaterNumber = p.uniformNumber();
         e.teamAbbrev = p.teamAbbrev();
         e.headshot = p.imageUrl();
-        if (refreshStats) {
-            applyStats(e, p.skaterStats());
-        } else {
-            carryStats(e, previous);
-        }
         e.yahooPositions = joinPositions(p.eligiblePositions());
         e.syncedAt = now;
         return e;
     }
 
-    private static void applyStats(Skater e, YahooSkaterStats stats) {
+    private SkaterSeason toSkaterSeason(Long id, YahooSkaterStats stats, Instant now) {
+        SkaterSeason e = new SkaterSeason();
+        e.playerId = id;
+        e.season = season;
+        e.syncedAt = now;
         if (stats != null) {
             e.gamesPlayed = stats.gamesPlayed();
             e.goals = stats.goals();
@@ -315,35 +318,10 @@ public class SyncService {
             e.totalFaceoffLosses = stats.faceoffsLost();
             e.faceoffWinningPctg = faceoffPct(stats.faceoffsWon(), stats.faceoffsLost());
         }
+        return e;
     }
 
-    /** A player the pool has just gained has no stored line, and none is invented for them. */
-    private static void carryStats(Skater e, Skater previous) {
-        if (previous == null) {
-            return;
-        }
-        e.gamesPlayed = previous.gamesPlayed;
-        e.goals = previous.goals;
-        e.assists = previous.assists;
-        e.points = previous.points;
-        e.plusMinus = previous.plusMinus;
-        e.pim = previous.pim;
-        e.powerPlayGoals = previous.powerPlayGoals;
-        e.powerPlayPoints = previous.powerPlayPoints;
-        e.shorthandedGoals = previous.shorthandedGoals;
-        e.shorthandedPoints = previous.shorthandedPoints;
-        e.gameWinningGoals = previous.gameWinningGoals;
-        e.shots = previous.shots;
-        e.shootingPctg = previous.shootingPctg;
-        e.avgToi = previous.avgToi;
-        e.hits = previous.hits;
-        e.blockedShots = previous.blockedShots;
-        e.totalFaceoffWins = previous.totalFaceoffWins;
-        e.totalFaceoffLosses = previous.totalFaceoffLosses;
-        e.faceoffWinningPctg = previous.faceoffWinningPctg;
-    }
-
-    private Goalie toGoalie(Long id, YahooPlayerResponse p, Instant now, Goalie previous) {
+    private static Goalie toGoalie(Long id, YahooPlayerResponse p, Instant now) {
         Goalie e = new Goalie();
         e.id = id;
         e.firstName = p.firstName();
@@ -352,17 +330,16 @@ public class SyncService {
         e.sweaterNumber = p.uniformNumber();
         e.teamAbbrev = p.teamAbbrev();
         e.headshot = p.imageUrl();
-        if (refreshStats) {
-            applyStats(e, p.goalieStats());
-        } else {
-            carryStats(e, previous);
-        }
         e.yahooPositions = joinPositions(p.eligiblePositions());
         e.syncedAt = now;
         return e;
     }
 
-    private static void applyStats(Goalie e, YahooGoalieStats stats) {
+    private GoalieSeason toGoalieSeason(Long id, YahooGoalieStats stats, Instant now) {
+        GoalieSeason e = new GoalieSeason();
+        e.playerId = id;
+        e.season = season;
+        e.syncedAt = now;
         if (stats != null) {
             e.gamesPlayed = stats.gamesPlayed();
             e.gamesStarted = stats.gamesStarted();
@@ -375,21 +352,6 @@ public class SyncService {
             e.goalsAgainstAvg = stats.goalsAgainstAvg();
             e.savePctg = stats.savePct();
         }
-    }
-
-    private static void carryStats(Goalie e, Goalie previous) {
-        if (previous == null) {
-            return;
-        }
-        e.gamesPlayed = previous.gamesPlayed;
-        e.gamesStarted = previous.gamesStarted;
-        e.wins = previous.wins;
-        e.losses = previous.losses;
-        e.shutouts = previous.shutouts;
-        e.shotsAgainst = previous.shotsAgainst;
-        e.saves = previous.saves;
-        e.goalsAgainst = previous.goalsAgainst;
-        e.goalsAgainstAvg = previous.goalsAgainstAvg;
-        e.savePctg = previous.savePctg;
+        return e;
     }
 }

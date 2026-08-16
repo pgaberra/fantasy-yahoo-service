@@ -20,13 +20,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * A sync is a full replace, which is fine while the stats being cached are the ones Yahoo is
- * still updating. Between seasons it is not: the roster worth caching is the new season's while
- * the stats worth caching are last season's, finished and unobtainable from the new season's
- * game — so a fetch without a stat line must not blank the one we hold.
+ * A run caches two different things with two different lifetimes: the pool as it is now, which
+ * turns over, and one season's stat line, which stops changing when the season ends. Keeping
+ * them apart is what lets the app collect the season being played while still showing the one
+ * that finished.
  */
 @ExtendWith(MockitoExtension.class)
 class SyncServiceTest {
+
+    private static final int SEASON = 2026;
 
     @Mock
     private YahooPlayerService yahooPlayerService;
@@ -38,80 +40,120 @@ class SyncServiceTest {
     private GoalieRepository goalieRepository;
 
     @Mock
+    private SkaterSeasonRepository skaterSeasonRepository;
+
+    @Mock
+    private GoalieSeasonRepository goalieSeasonRepository;
+
+    @Mock
     private SyncRunRepository syncRunRepository;
 
-    private SyncService syncService(boolean refreshStats) {
+    private SyncService syncService() {
         return new SyncService(yahooPlayerService, skaterRepository, goalieRepository,
-                syncRunRepository, "nhl", "2025", refreshStats);
+                skaterSeasonRepository, goalieSeasonRepository, syncRunRepository, SEASON);
     }
 
     @Test
-    void carriesAStoredStatLineAcrossWhenStatsAreNotBeingRefreshed() {
-        givenStored(storedSkater(9, 82, 64), storedGoalie(101, 58, 36));
-        givenYahooReturns(skaterWithoutStats(9, "Edmonton"), goalieWithoutStats(101));
+    void writesTheStatLineUnderTheSeasonBeingCollected() {
+        givenStored(storedSkater(9));
+        givenYahooReturns(skaterWithStats(9, "EDM", 12, 3));
 
-        syncService(false).sync();
+        syncService().sync();
 
-        Skater skater = savedSkaters().getFirst();
-        assertThat(skater.goals).isEqualTo(64);
-        assertThat(skater.gamesPlayed).isEqualTo(82);
-        // Identity is still refreshed — that is the whole point of running the sync.
-        assertThat(skater.teamAbbrev).isEqualTo("Edmonton");
-        assertThat(savedGoalies().getFirst().wins).isEqualTo(36);
+        SkaterSeason line = savedSkaterSeasons().getFirst();
+        assertThat(line.playerId).isEqualTo(9L);
+        assertThat(line.season).isEqualTo(SEASON);
+        assertThat(line.gamesPlayed).isEqualTo(12);
+        assertThat(line.goals).isEqualTo(3);
     }
 
-    /** A rookie has no stored line to carry, and none is invented for them. */
+    /**
+     * The whole point of the split: collecting a new season must not disturb a finished one.
+     * Nothing here deletes a stat row — only a player leaving the pool does, by cascade.
+     */
     @Test
-    void leavesAPlayerNewToThePoolWithoutAStatLine() {
+    void leavesEarlierSeasonsAlone() {
+        givenStored(storedSkater(9));
+        givenYahooReturns(skaterWithStats(9, "EDM", 12, 3));
+
+        syncService().sync();
+
+        assertThat(savedSkaterSeasons()).allMatch(line -> line.season == SEASON);
+        verify(skaterSeasonRepository, never()).deleteAll(any());
+        verify(skaterSeasonRepository, never()).deleteAllById(any());
+    }
+
+    @Test
+    void refreshesTheIdentitySeparatelyFromTheStats() {
+        givenStored(storedSkater(9));
+        givenYahooReturns(skaterWithStats(9, "BOS", 12, 3));
+
+        syncService().sync();
+
+        assertThat(savedSkaters().getFirst().teamAbbrev).isEqualTo("BOS");
+    }
+
+    /** A player with nothing to report gets a row of nulls, not a row of zeros. */
+    @Test
+    void recordsAPlayerWithoutStatsAsHavingNone() {
         givenStored();
-        givenYahooReturns(skaterWithoutStats(9, "Edmonton"));
+        givenYahooReturns(skaterWithoutStats(9));
 
-        syncService(false).sync();
+        syncService().sync();
 
-        assertThat(savedSkaters().getFirst().goals).isNull();
+        SkaterSeason line = savedSkaterSeasons().getFirst();
+        assertThat(line.season).isEqualTo(SEASON);
+        assertThat(line.gamesPlayed).isNull();
+        assertThat(line.goals).isNull();
+    }
+
+    @Test
+    void keepsGoaliesOnTheirOwnSeasonRows() {
+        givenStored();
+        givenYahooReturns(goalieWithStats(101, 40, 25));
+
+        syncService().sync();
+
+        GoalieSeason line = savedGoalieSeasons().getFirst();
+        assertThat(line.season).isEqualTo(SEASON);
+        assertThat(line.wins).isEqualTo(25);
     }
 
     /**
      * The player list is paginated and a short page ends the walk early, which looks just like a
-     * mass exodus. Believing it would now delete those players out of every saved projection.
+     * mass exodus. Believing it would delete those players out of every saved projection.
      */
     @Test
     void refusesToActOnAFetchThatLostMostOfThePool() {
-        givenStored(storedSkater(1, 82, 64), storedSkater(2, 80, 40),
-                storedSkater(3, 78, 30), storedSkater(4, 75, 20), storedSkater(5, 70, 10));
-        givenYahooReturns(skaterWithoutStats(1, "Edmonton"), skaterWithoutStats(2, "Boston"));
+        givenStored(storedSkater(1), storedSkater(2), storedSkater(3), storedSkater(4), storedSkater(5));
+        givenYahooReturns(skaterWithoutStats(1), skaterWithoutStats(2));
 
-        syncService(false).sync();
+        syncService().sync();
 
         verify(skaterRepository, never()).saveAll(any());
+        verify(skaterSeasonRepository, never()).saveAll(any());
         verify(skaterRepository, never()).deleteAllById(any());
         assertThat(savedRun().status).isEqualTo("failed");
         assertThat(savedRun().error).contains("preserving existing data");
     }
 
     @Test
-    void writesTheFetchedStatsWhenStatsAreBeingRefreshed() {
-        givenStored(storedSkater(9, 82, 64));
-        givenYahooReturns(skaterWithStats(9, "Edmonton", 12, 3));
+    void asksYahooForTheSeasonBeingCollected() {
+        givenStored();
+        givenYahooReturns(skaterWithoutStats(9));
 
-        syncService(true).sync();
+        syncService().sync();
 
-        Skater skater = savedSkaters().getFirst();
-        assertThat(skater.goals).isEqualTo(3);
-        assertThat(skater.gamesPlayed).isEqualTo(12);
+        verify(yahooPlayerService).players("nhl", "2026");
     }
 
-    private void givenStored(Object... players) {
-        List<Skater> skaters = List.of(players).stream()
-                .filter(Skater.class::isInstance).map(Skater.class::cast).toList();
-        List<Goalie> goalies = List.of(players).stream()
-                .filter(Goalie.class::isInstance).map(Goalie.class::cast).toList();
-        when(skaterRepository.findAll()).thenReturn(skaters);
-        when(goalieRepository.findAll()).thenReturn(goalies);
+    private void givenStored(Skater... skaters) {
+        when(skaterRepository.findAll()).thenReturn(List.of(skaters));
+        when(goalieRepository.findAll()).thenReturn(List.of());
     }
 
     private void givenYahooReturns(YahooPlayerResponse... players) {
-        when(yahooPlayerService.players("nhl", "2025")).thenReturn(List.of(players));
+        when(yahooPlayerService.players("nhl", String.valueOf(SEASON))).thenReturn(List.of(players));
     }
 
     private SyncRun savedRun() {
@@ -128,38 +170,31 @@ class SyncServiceTest {
     }
 
     @SuppressWarnings("unchecked")
-    private List<Goalie> savedGoalies() {
-        ArgumentCaptor<List<Goalie>> saved = ArgumentCaptor.forClass(List.class);
-        verify(goalieRepository).saveAll(saved.capture());
+    private List<SkaterSeason> savedSkaterSeasons() {
+        ArgumentCaptor<List<SkaterSeason>> saved = ArgumentCaptor.forClass(List.class);
+        verify(skaterSeasonRepository).saveAll(saved.capture());
         return saved.getValue();
     }
 
-    private static Skater storedSkater(long id, int gamesPlayed, int goals) {
+    @SuppressWarnings("unchecked")
+    private List<GoalieSeason> savedGoalieSeasons() {
+        ArgumentCaptor<List<GoalieSeason>> saved = ArgumentCaptor.forClass(List.class);
+        verify(goalieSeasonRepository).saveAll(saved.capture());
+        return saved.getValue();
+    }
+
+    private static Skater storedSkater(long id) {
         Skater skater = new Skater();
         skater.id = id;
         skater.firstName = "Connor";
         skater.lastName = "McDavid";
         skater.teamAbbrev = "EDM";
-        skater.gamesPlayed = gamesPlayed;
-        skater.goals = goals;
         skater.syncedAt = Instant.parse("2026-06-01T04:00:00Z");
         return skater;
     }
 
-    private static Goalie storedGoalie(long id, int gamesPlayed, int wins) {
-        Goalie goalie = new Goalie();
-        goalie.id = id;
-        goalie.firstName = "Igor";
-        goalie.lastName = "Shesterkin";
-        goalie.teamAbbrev = "NYR";
-        goalie.gamesPlayed = gamesPlayed;
-        goalie.wins = wins;
-        goalie.syncedAt = Instant.parse("2026-06-01T04:00:00Z");
-        return goalie;
-    }
-
-    private static YahooPlayerResponse skaterWithoutStats(long id, String team) {
-        return player(id, team, false, null, null);
+    private static YahooPlayerResponse skaterWithoutStats(long id) {
+        return player(id, "EDM", false, null, null);
     }
 
     private static YahooPlayerResponse skaterWithStats(long id, String team, int gamesPlayed, int goals) {
@@ -167,8 +202,9 @@ class SyncServiceTest {
                 null, null, null, null, null, null, null, null, null, null, null, null), null);
     }
 
-    private static YahooPlayerResponse goalieWithoutStats(long id) {
-        return player(id, "NYR", true, null, null);
+    private static YahooPlayerResponse goalieWithStats(long id, int gamesPlayed, int wins) {
+        return player(id, "NYR", true, null,
+                new YahooGoalieStats(gamesPlayed, null, wins, null, null, null, null, null, null, null));
     }
 
     private static YahooPlayerResponse player(long id, String team, boolean goalie,

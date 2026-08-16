@@ -66,18 +66,24 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   (`@ConfigurationProperties("yahoo.oauth")`), `YahooRestClientConfig` (login + API
   `RestClient`s), `InternalApiKeyFilter` (API-key auth; exempts the callback).
 - `exception/` — `YahooNotConnectedException`, `ErrorDto`, `GlobalExceptionHandler`.
-- `players/` — the cached player read model (`skaters` / `goalies`) and the job that refreshes
-  it from Yahoo. Two config values decide what a run caches, and they are not the same axis:
-  - `SYNC_YAHOO_GAME_KEY` picks **whose player list** — a Yahoo *game* is a sport **and** a
-    season, and `nhl` is the alias for the current one (a numeric key such as the `453` in a
-    league key `453.l.12345` pins a past season).
-  - `SYNC_YAHOO_SEASON` picks **which season's stat line** is read within that game.
-  Between seasons those want to point at different years: the roster worth caching is the new
-  season's, the stats worth caching are last season's. A sync is a full replace, so a fetch
-  that comes back without a stat line would blank the one we hold — `SYNC_REFRESH_STATS=false`
-  makes a run refresh identity only and carry each stored stat line across. `SYNC_YAHOO_DISABLED`
-  is the older, blunter switch: it skips the scheduled run entirely (off-season, when there is
-  no active game to call at all).
+- `players/` — the cached player read model and the job that refreshes it from Yahoo. The
+  model is split along the line the data itself splits on:
+  - `skaters` / `goalies` — **who is in the league now**: identity, team, sweater number,
+    eligible positions, headshot. Turns over between seasons.
+  - `skater_seasons` / `goalie_seasons` — **one stat line per player and season**, keyed by
+    `(player_id, season)` where season is the start year. A finished season's numbers never
+    change again, so nothing overwrites them; a departed player's rows go by cascade.
+
+  It used to be one unlabelled stat line per player, which meant caching a new season wrote
+  over the previous one. That collides with how the app is used: the season being **collected**
+  is the one being played, while the season being **shown** as a projection's reference is the
+  one that finished. Those are different for most of the year, so they are now different
+  settings in different services — `SYNC_YAHOO_SEASON` here says what to collect, and the BFF
+  decides what to show by asking `/api/v1/players/*?season=`.
+
+  `SYNC_YAHOO_DISABLED` remains the off-season switch: it skips the scheduled run entirely,
+  for the months when Yahoo has no active game to call at all. A failed run logs at `ERROR`
+  and therefore reaches Sentry, which is the signal that the season has ended.
 
 **Phase status:** OAuth connect flow + encrypted token storage + `/connection` **and**
 league discovery + settings are implemented. The BFF wiring lands in a parallel PR and the

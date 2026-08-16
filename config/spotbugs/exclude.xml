@@ -28,6 +28,8 @@
         <Or>
             <Class name="com.fantasy.yahoo.players.Skater"/>
             <Class name="com.fantasy.yahoo.players.Goalie"/>
+            <Class name="com.fantasy.yahoo.players.SkaterSeason"/>
+            <Class name="com.fantasy.yahoo.players.GoalieSeason"/>
         </Or>
     </Match>
 
