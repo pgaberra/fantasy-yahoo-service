@@ -12,6 +12,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -48,9 +49,13 @@ class SyncServiceTest {
     @Mock
     private SyncRunRepository syncRunRepository;
 
+    @Mock
+    private HeadshotSyncService headshotSyncService;
+
     private SyncService syncService() {
         return new SyncService(yahooPlayerService, skaterRepository, goalieRepository,
-                skaterSeasonRepository, goalieSeasonRepository, syncRunRepository, SEASON);
+                skaterSeasonRepository, goalieSeasonRepository, syncRunRepository,
+                headshotSyncService, SEASON);
     }
 
     @Test
@@ -145,6 +150,41 @@ class SyncServiceTest {
         syncService().sync();
 
         verify(yahooPlayerService).players("nhl", "2026");
+    }
+
+    @Test
+    void handsEveryPlayerWithASourceImageToTheHeadshotRefresh() {
+        givenStored();
+        givenYahooReturns(skaterWithoutStats(9), goalieWithStats(101, 40, 25));
+
+        syncService().sync();
+
+        assertThat(refreshedSources())
+                .containsOnlyKeys(9L, 101L)
+                .containsValue("https://example.test/headshot.png");
+    }
+
+    /**
+     * The read model is what a sync exists to produce; the thumbnails are a rendering of it. An
+     * image CDN that will not answer must not turn a good sync into a failed one.
+     */
+    @Test
+    void recordsASuccessfulSyncWhenTheHeadshotRefreshFails() {
+        givenStored();
+        givenYahooReturns(skaterWithoutStats(9));
+        when(headshotSyncService.refresh(any())).thenThrow(new RuntimeException("image CDN down"));
+
+        syncService().sync();
+
+        assertThat(savedRun().status).isEqualTo("success");
+        assertThat(savedSkaters()).hasSize(1);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<Long, String> refreshedSources() {
+        ArgumentCaptor<Map<Long, String>> refreshed = ArgumentCaptor.forClass(Map.class);
+        verify(headshotSyncService).refresh(refreshed.capture());
+        return refreshed.getValue();
     }
 
     private void givenStored(Skater... skaters) {
