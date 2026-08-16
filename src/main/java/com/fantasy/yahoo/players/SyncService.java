@@ -46,6 +46,15 @@ public class SyncService {
     // Jackson 3, so we don't inject one (same pattern as YahooFantasyClient).
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /**
+     * How much of the pool a run has to come back with before its deletions are believed. The
+     * player list is paginated, and a page that comes back short ends the walk early — which
+     * looks exactly like several hundred players having left the league. That used to cost a
+     * cache refresh; now that the BFF drops a departed player's row from every saved projection,
+     * it would cost users their work. A season's turnover moves who is in the pool, not how many.
+     */
+    private static final double MIN_RETAINED_SHARE = 0.8;
+
     private final YahooPlayerService yahooPlayerService;
     private final SkaterRepository skaterRepository;
     private final GoalieRepository goalieRepository;
@@ -137,6 +146,13 @@ public class SyncService {
         for (Goalie g : goalies) {
             currentGoalieIds.add(g.id);
             currentLabels.put(g.id, label(g.firstName, g.lastName, g.teamAbbrev));
+        }
+
+        int previousCount = previousSkaterIds.size() + previousGoalieIds.size();
+        int currentCount = currentSkaterIds.size() + currentGoalieIds.size();
+        if (previousCount > 0 && currentCount < previousCount * MIN_RETAINED_SHARE) {
+            throw new IllegalStateException("Yahoo returned only " + currentCount + " players against "
+                    + previousCount + " held; preserving existing data");
         }
 
         skaterRepository.saveAll(skaters);

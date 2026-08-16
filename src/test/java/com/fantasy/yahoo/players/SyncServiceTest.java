@@ -15,6 +15,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -70,6 +71,24 @@ class SyncServiceTest {
         assertThat(savedSkaters().getFirst().goals).isNull();
     }
 
+    /**
+     * The player list is paginated and a short page ends the walk early, which looks just like a
+     * mass exodus. Believing it would now delete those players out of every saved projection.
+     */
+    @Test
+    void refusesToActOnAFetchThatLostMostOfThePool() {
+        givenStored(storedSkater(1, 82, 64), storedSkater(2, 80, 40),
+                storedSkater(3, 78, 30), storedSkater(4, 75, 20), storedSkater(5, 70, 10));
+        givenYahooReturns(skaterWithoutStats(1, "Edmonton"), skaterWithoutStats(2, "Boston"));
+
+        syncService(false).sync();
+
+        verify(skaterRepository, never()).saveAll(any());
+        verify(skaterRepository, never()).deleteAllById(any());
+        assertThat(savedRun().status).isEqualTo("failed");
+        assertThat(savedRun().error).contains("preserving existing data");
+    }
+
     @Test
     void writesTheFetchedStatsWhenStatsAreBeingRefreshed() {
         givenStored(storedSkater(9, 82, 64));
@@ -93,6 +112,12 @@ class SyncServiceTest {
 
     private void givenYahooReturns(YahooPlayerResponse... players) {
         when(yahooPlayerService.players("nhl", "2025")).thenReturn(List.of(players));
+    }
+
+    private SyncRun savedRun() {
+        ArgumentCaptor<SyncRun> saved = ArgumentCaptor.forClass(SyncRun.class);
+        verify(syncRunRepository).save(saved.capture());
+        return saved.getValue();
     }
 
     @SuppressWarnings("unchecked")
