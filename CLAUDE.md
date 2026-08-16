@@ -66,6 +66,18 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   (`@ConfigurationProperties("yahoo.oauth")`), `YahooRestClientConfig` (login + API
   `RestClient`s), `InternalApiKeyFilter` (API-key auth; exempts the callback).
 - `exception/` — `YahooNotConnectedException`, `ErrorDto`, `GlobalExceptionHandler`.
+- `players/` — the cached player read model (`skaters` / `goalies`) and the job that refreshes
+  it from Yahoo. Two config values decide what a run caches, and they are not the same axis:
+  - `SYNC_YAHOO_GAME_KEY` picks **whose player list** — a Yahoo *game* is a sport **and** a
+    season, and `nhl` is the alias for the current one (a numeric key such as the `453` in a
+    league key `453.l.12345` pins a past season).
+  - `SYNC_YAHOO_SEASON` picks **which season's stat line** is read within that game.
+  Between seasons those want to point at different years: the roster worth caching is the new
+  season's, the stats worth caching are last season's. A sync is a full replace, so a fetch
+  that comes back without a stat line would blank the one we hold — `SYNC_REFRESH_STATS=false`
+  makes a run refresh identity only and carry each stored stat line across. `SYNC_YAHOO_DISABLED`
+  is the older, blunter switch: it skips the scheduled run entirely (off-season, when there is
+  no active game to call at all).
 
 **Phase status:** OAuth connect flow + encrypted token storage + `/connection` **and**
 league discovery + settings are implemented. The BFF wiring lands in a parallel PR and the
