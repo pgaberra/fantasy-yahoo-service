@@ -39,13 +39,15 @@
          analysis doesn't follow String transforms so it still flags them. Scoped per class.
          YahooPlayerService: the interpolated gameKey. YahooOAuthController: the OAuth callback's
          error/state value. HeadshotSyncService: the failure text of an image fetch, which can
-         quote a URL Yahoo gave us. -->
+         quote a URL Yahoo gave us. YahooProbeService: the probe path and Yahoo's error body,
+         both truncated and stripped of CR/LF by forLog before they reach the log. -->
     <Match>
         <Bug pattern="CRLF_INJECTION_LOGS"/>
         <Or>
             <Class name="com.fantasy.yahoo.player.YahooPlayerService"/>
             <Class name="com.fantasy.yahoo.oauth.YahooOAuthController"/>
             <Class name="com.fantasy.yahoo.players.HeadshotSyncService"/>
+            <Class name="com.fantasy.yahoo.players.YahooProbeService"/>
         </Or>
     </Match>
 </FindBugsFilter>

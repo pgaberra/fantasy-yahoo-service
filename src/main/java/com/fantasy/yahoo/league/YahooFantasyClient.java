@@ -7,6 +7,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Thin wrapper over the Yahoo Fantasy Sports API. Returns raw Jackson {@link JsonNode}
@@ -49,11 +50,54 @@ public class YahooFantasyClient {
      * starting at the given offset. When {@code season} is blank Yahoo uses the current season.
      */
     public JsonNode getGamePlayers(String accessToken, String gameKey, int start, String season) {
+        return get(accessToken, gamePlayersPath(gameKey, start, season));
+    }
+
+    /**
+     * The outcome of one call, with the failure as data rather than an exception.
+     *
+     * @param status Yahoo's HTTP status, or null when no response arrived at all
+     * @param body the response body, or Yahoo's error body on a non-2xx
+     * @param error what went wrong, or null on success
+     */
+    public record Attempt(String path, Integer status, String body, String error) {
+
+        public boolean ok() {
+            return error == null;
+        }
+    }
+
+    /**
+     * Fetches a page of a game's players and reports what happened instead of throwing.
+     *
+     * <p>Every other call here turns a Yahoo failure into an {@link IllegalStateException}, which
+     * is right when the caller needs the data — but useless when the failure *is* what you came
+     * to look at. A 403 with Yahoo's own wording, against a game key and season you chose, is the
+     * only thing that distinguishes "we are not allowed" from "that season is not there" from
+     * "our token is dead". So this one hands the status back.
+     */
+    public Attempt attemptGamePlayers(String accessToken, String gameKey, String season) {
+        String path = gamePlayersPath(gameKey, 0, season);
+        try {
+            String body = restClient.get()
+                    .uri(path)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                    .retrieve()
+                    .body(String.class);
+            return new Attempt(path, 200, body, null);
+        } catch (RestClientResponseException e) {
+            return new Attempt(path, e.getStatusCode().value(), e.getResponseBodyAsString(),
+                    e.getStatusText());
+        } catch (RestClientException e) {
+            return new Attempt(path, null, null, e.getMessage());
+        }
+    }
+
+    private static String gamePlayersPath(String gameKey, int start, String season) {
         String stats = (season == null || season.isBlank())
                 ? "/stats;type=season"
                 : "/stats;type=season;season=" + season;
-        return get(accessToken,
-                "/game/" + gameKey + "/players;start=" + start + ";count=25" + stats + "?format=json");
+        return "/game/" + gameKey + "/players;start=" + start + ";count=25" + stats + "?format=json";
     }
 
     private JsonNode get(String accessToken, String uriTemplate, Object... uriVariables) {
