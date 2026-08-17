@@ -81,6 +81,13 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   settings in different services — `SYNC_YAHOO_SEASON` here says what to collect, and the BFF
   decides what to show by asking `/api/v1/players/*?season=`.
 
+  `YahooProbeService` (`GET /api/v1/sync/probe?gameKey=&season=`) asks Yahoo one question and
+  reports the answer as data: can the service account read this game's players for this season?
+  A sync failure only says *something* was refused; telling a refused season from a refused game
+  from a dead token means varying one input at a time and reading the raw status, which is what
+  this is for. It reads nothing into the cache and writes nothing, so it is safe to fire at any
+  game key. The BFF exposes it to admins.
+
   `SYNC_YAHOO_DISABLED` remains the off-season switch: it skips the scheduled run entirely,
   for the months when Yahoo has no active game to call at all. A failed run logs at `ERROR`
   and therefore reaches Sentry, which is the signal that the season has ended.

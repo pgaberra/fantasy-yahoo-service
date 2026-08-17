@@ -2,6 +2,7 @@ package com.fantasy.yahoo.players;
 
 import com.fantasy.yahoo.players.dto.SyncAcceptedResponse;
 import com.fantasy.yahoo.players.dto.SyncRunResponse;
+import com.fantasy.yahoo.players.dto.YahooProbeResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -26,9 +27,11 @@ public class SyncController {
     private static final Logger log = LoggerFactory.getLogger(SyncController.class);
 
     private final SyncService syncService;
+    private final YahooProbeService probeService;
 
-    public SyncController(SyncService syncService) {
+    public SyncController(SyncService syncService, YahooProbeService probeService) {
         this.syncService = syncService;
+        this.probeService = probeService;
     }
 
     @Operation(summary = "Trigger a player sync",
@@ -58,5 +61,18 @@ public class SyncController {
     @GetMapping("/runs")
     public List<SyncRunResponse> runs(@RequestParam(defaultValue = "10") int limit) {
         return syncService.getRuns(Math.max(1, Math.min(limit, 50)));
+    }
+
+    @Operation(summary = "Ask Yahoo whether the service account may read a game's players",
+            description = "Makes one live call and reports the status Yahoo answered with, "
+                    + "including its own error wording. Reads nothing into the cache and writes "
+                    + "nothing, so it is safe to fire at any game key or season. Vary one input "
+                    + "at a time to tell a refused season from a refused game from a dead token.")
+    @ApiResponse(responseCode = "200", description = "What Yahoo answered, refusal included")
+    @GetMapping("/probe")
+    public YahooProbeResponse probe(
+            @RequestParam(defaultValue = "nhl") String gameKey,
+            @RequestParam(required = false) String season) {
+        return probeService.probe(gameKey, season);
     }
 }
