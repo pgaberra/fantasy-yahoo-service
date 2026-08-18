@@ -54,6 +54,22 @@ public class YahooFantasyClient {
     }
 
     /**
+     * One page of a *league's* player collection. Same shape as the game's, but reached through a
+     * league the account belongs to — which is the only route the Fantasy API is documented to
+     * offer, and the one that survives when the game-wide collection is refused.
+     */
+    public JsonNode getLeaguePlayers(String accessToken, String leagueKey, int start, String season) {
+        String stats = (season == null || season.isBlank())
+                ? "/stats;type=season"
+                : "/stats;type=season;season=" + season;
+        // The key is caller-supplied, so it goes in as a URI-template variable and is encoded
+        // into a single path segment.
+        return get(accessToken,
+                "/league/{leagueKey}/players;start=" + start + ";count=25" + stats + "?format=json",
+                leagueKey);
+    }
+
+    /**
      * The outcome of one call, with the failure as data rather than an exception.
      *
      * @param status Yahoo's HTTP status, or null when no response arrived at all

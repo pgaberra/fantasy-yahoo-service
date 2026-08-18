@@ -74,6 +74,14 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
     `(player_id, season)` where season is the start year. A finished season's numbers never
     change again, so nothing overwrites them; a departed player's rows go by cascade.
 
+  The pool is read **through a league** the service account belongs to, not through the game.
+  That is the only route the Fantasy API documents — its own client offers no game-wide player
+  listing, only `League` methods — and the game-wide collection this used until June 2026 is now
+  refused outright. The league is **discovered, not configured**: a league key contains the game
+  key, so it changes every season, and pinning one would mean editing config each autumn. Join
+  the service account to a league for the season and the sync finds it; a run with no league to
+  read through fails loudly rather than guessing.
+
   It used to be one unlabelled stat line per player, which meant caching a new season wrote
   over the previous one. That collides with how the app is used: the season being **collected**
   is the one being played, while the season being **shown** as a projection's reference is the
