@@ -43,26 +43,38 @@ public class YahooProbeService {
      * @param leagueKey ask a league's player collection instead of the game's. The granted scope
      *     is about the user's own leagues, so this is the one that may be allowed when the other
      *     is not — and the difference between the two answers is the diagnosis.
+     * @param target {@code leagues} asks whether the account can list its own leagues at all,
+     *     ignoring the other two. That is the floor: if even this is refused, no route into the
+     *     Fantasy API is open, and the question stops being which endpoint to use.
      */
-    public YahooProbeResponse probe(String gameKey, String season, String leagueKey) {
+    public YahooProbeResponse probe(String gameKey, String season, String leagueKey, String target) {
         String accessToken;
         try {
             accessToken = oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID);
         } catch (RuntimeException e) {
             // Not being connected is itself a finding, and the most common one — report it in the
             // same shape as everything else rather than as an error status on this endpoint.
-            return new YahooProbeResponse(false, path(gameKey, season, leagueKey), null, null,
+            return new YahooProbeResponse(false, path(gameKey, season, leagueKey, target), null, null,
                     "No usable service-account token: " + e.getMessage());
         }
 
-        Attempt attempt = hasText(leagueKey)
-                ? client.attemptLeaguePlayers(accessToken, leagueKey)
-                : client.attemptGamePlayers(accessToken, gameKey, season);
+        Attempt attempt;
+        if ("leagues".equalsIgnoreCase(target)) {
+            attempt = client.attemptUserLeagues(accessToken);
+        } else if (hasText(leagueKey)) {
+            attempt = client.attemptLeaguePlayers(accessToken, leagueKey);
+        } else {
+            attempt = client.attemptGamePlayers(accessToken, gameKey, season);
+        }
         if (!attempt.ok()) {
             log.info("Yahoo probe for {} answered {}: {}", forLog(attempt.path()), attempt.status(),
                     forLog(attempt.body()));
             return new YahooProbeResponse(false, attempt.path(), attempt.status(), null,
                     describe(attempt));
+        }
+        if ("leagues".equalsIgnoreCase(target)) {
+            // A leagues page carries no players, so counting them would read as an empty game.
+            return new YahooProbeResponse(true, attempt.path(), attempt.status(), null, null);
         }
         Integer players = countPlayers(attempt.body());
         if (players == null) {
@@ -131,7 +143,10 @@ public class YahooProbeService {
         return value != null && !value.isBlank();
     }
 
-    private static String path(String gameKey, String season, String leagueKey) {
+    private static String path(String gameKey, String season, String leagueKey, String target) {
+        if ("leagues".equalsIgnoreCase(target)) {
+            return "/users;use_login=1/games;game_keys=nhl/leagues";
+        }
         if (hasText(leagueKey)) {
             return "/league/" + leagueKey + "/players";
         }

@@ -40,11 +40,15 @@ class YahooProbeServiceTest {
     private YahooFantasyClient client;
 
     private YahooProbeResponse probe(String gameKey, String season) {
-        return new YahooProbeService(oauthService, client).probe(gameKey, season, null);
+        return new YahooProbeService(oauthService, client).probe(gameKey, season, null, null);
     }
 
     private YahooProbeResponse probeLeague(String leagueKey) {
-        return new YahooProbeService(oauthService, client).probe("nhl", null, leagueKey);
+        return new YahooProbeService(oauthService, client).probe("nhl", null, leagueKey, null);
+    }
+
+    private YahooProbeResponse probeLeaguesListing() {
+        return new YahooProbeService(oauthService, client).probe("nhl", null, null, "leagues");
     }
 
     @Test
@@ -118,6 +122,41 @@ class YahooProbeServiceTest {
         assertThat(response.players()).isEqualTo(1);
         assertThat(response.path()).contains("465.l.12345");
         verify(client, never()).attemptGamePlayers(any(), any(), any());
+    }
+
+    /**
+     * The floor. If the account cannot even list its own leagues — the most basic thing the
+     * granted scope covers — then no route into the Fantasy API is open, and the question stops
+     * being which endpoint to use.
+     */
+    @Test
+    void asksWhetherTheAccountCanListItsOwnLeagues() {
+        when(oauthService.validAccessToken(any())).thenReturn("token");
+        when(client.attemptUserLeagues(eq("token"))).thenReturn(
+                new Attempt("/users;use_login=1/games;game_keys=nhl/leagues", 403, FORBIDDEN_BODY,
+                        "Forbidden"));
+
+        YahooProbeResponse response = probeLeaguesListing();
+
+        assertThat(response.ok()).isFalse();
+        assertThat(response.status()).isEqualTo(403);
+        assertThat(response.error()).isEqualTo("This application is not authorized to perform this action.");
+        verify(client, never()).attemptGamePlayers(any(), any(), any());
+    }
+
+    /** A leagues page carries no players, so counting them would read as an empty game. */
+    @Test
+    void countsNoPlayersOnALeaguesListing() {
+        when(oauthService.validAccessToken(any())).thenReturn("token");
+        when(client.attemptUserLeagues(any())).thenReturn(
+                new Attempt("/users;use_login=1/games;game_keys=nhl/leagues", 200,
+                        "{\"fantasy_content\":{\"users\":{}}}", null));
+
+        YahooProbeResponse response = probeLeaguesListing();
+
+        assertThat(response.ok()).isTrue();
+        assertThat(response.status()).isEqualTo(200);
+        assertThat(response.players()).isNull();
     }
 
     /** A 200 that is not a player page is not a pass — it would read as "the game is empty". */

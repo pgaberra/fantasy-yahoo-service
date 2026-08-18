@@ -27,9 +27,12 @@ public class YahooFantasyClient {
         this.restClient = yahooApiRestClient;
     }
 
+    private static final String USER_LEAGUES_PATH =
+            "/users;use_login=1/games;game_keys=nhl/leagues?format=json";
+
     /** The NHL leagues the authenticated user belongs to. */
     public JsonNode getUserNhlLeagues(String accessToken) {
-        return get(accessToken, "/users;use_login=1/games;game_keys=nhl/leagues?format=json");
+        return get(accessToken, USER_LEAGUES_PATH);
     }
 
     /** A league's settings (scoring categories, roster positions, modifiers). */
@@ -109,6 +112,14 @@ public class YahooFantasyClient {
         // into a single path segment — a stray '/' or '?' cannot reshape the request.
         return attempt(accessToken, leaguePlayersPath("{leagueKey}"),
                 leaguePlayersPath(leagueKey), leagueKey);
+    }
+
+    /**
+     * Whether the account can list its own leagues at all — the most basic thing the granted
+     * scope covers, and so the one that separates "this call is not allowed" from "nothing is".
+     */
+    public Attempt attemptUserLeagues(String accessToken) {
+        return attempt(accessToken, USER_LEAGUES_PATH, USER_LEAGUES_PATH);
     }
 
     private Attempt attempt(String accessToken, String uriTemplate, String display, Object... vars) {

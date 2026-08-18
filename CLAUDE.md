@@ -96,7 +96,10 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   this is for. Give it a `leagueKey` and it asks a *league's* player collection instead: the
   granted Fantasy Sports scope talks about the user's own leagues, while a game's collection
   belongs to nobody in particular, so one may be served where the other is refused — and that
-  difference is the diagnosis. `GET /api/v1/sync/leagues` lists the service account's own leagues
+  difference is the diagnosis. `target=leagues` asks the floor question — can the account list
+  its own leagues at all? — since a refusal there means no route into the Fantasy API is open
+  and the question stops being which endpoint to use.
+  `GET /api/v1/sync/leagues` lists the service account's own leagues
   with their keys, which both saves hunting for one and doubles as a test: if it succeeds while a
   game probe is refused, the account and its permission are fine. Neither reads into the cache nor
   writes anything, so both are safe to fire at will. The BFF exposes them to admins.
