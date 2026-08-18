@@ -3,6 +3,9 @@ package com.fantasy.yahoo.players;
 import com.fantasy.yahoo.players.dto.SyncAcceptedResponse;
 import com.fantasy.yahoo.players.dto.SyncRunResponse;
 import com.fantasy.yahoo.players.dto.YahooProbeResponse;
+import com.fantasy.yahoo.league.YahooLeagueService;
+import com.fantasy.yahoo.league.dto.LeaguesResponse;
+import com.fantasy.yahoo.oauth.YahooOAuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -28,10 +31,13 @@ public class SyncController {
 
     private final SyncService syncService;
     private final YahooProbeService probeService;
+    private final YahooLeagueService leagueService;
 
-    public SyncController(SyncService syncService, YahooProbeService probeService) {
+    public SyncController(SyncService syncService, YahooProbeService probeService,
+                          YahooLeagueService leagueService) {
         this.syncService = syncService;
         this.probeService = probeService;
+        this.leagueService = leagueService;
     }
 
     @Operation(summary = "Trigger a player sync",
@@ -67,12 +73,28 @@ public class SyncController {
             description = "Makes one live call and reports the status Yahoo answered with, "
                     + "including its own error wording. Reads nothing into the cache and writes "
                     + "nothing, so it is safe to fire at any game key or season. Vary one input "
-                    + "at a time to tell a refused season from a refused game from a dead token.")
+                    + "at a time to tell a refused season from a refused game from a dead token. "
+                    + "Give a leagueKey to ask a league's player collection instead of the whole "
+                    + "game's — the granted scope is about leagues, so that one may be allowed "
+                    + "where the other is not.")
     @ApiResponse(responseCode = "200", description = "What Yahoo answered, refusal included")
     @GetMapping("/probe")
     public YahooProbeResponse probe(
             @RequestParam(defaultValue = "nhl") String gameKey,
-            @RequestParam(required = false) String season) {
-        return probeService.probe(gameKey, season);
+            @RequestParam(required = false) String season,
+            @RequestParam(required = false) String leagueKey) {
+        return probeService.probe(gameKey, season, leagueKey);
+    }
+
+    @Operation(summary = "The service account's own leagues",
+            description = "The leagues the app-owned Yahoo account belongs to, with their keys. "
+                    + "Two uses: it hands you a league key for the probe without hunting for one, "
+                    + "and it is itself a test — if this succeeds while a game's player "
+                    + "collection is refused, the account and its permission are fine and the "
+                    + "refusal is about what was asked for, not who asked.")
+    @ApiResponse(responseCode = "200", description = "Leagues returned")
+    @GetMapping("/leagues")
+    public LeaguesResponse serviceAccountLeagues() {
+        return leagueService.leagues(YahooOAuthService.SERVICE_ACCOUNT_ID);
     }
 }
