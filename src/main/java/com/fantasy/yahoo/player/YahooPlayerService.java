@@ -34,14 +34,41 @@ public class YahooPlayerService {
     /**
      * Every player in the given Yahoo game (default "nhl") with identity, headshot, eligible
      * positions and the requested season's stat line. A blank season means the current season.
+     *
+     * <p>Kept for the diagnostic probe. The sync reads through a league instead — see
+     * {@link #leaguePlayers}: Yahoo refuses this collection, and the documented client offers no
+     * game-wide player listing at all.
      */
     public List<YahooPlayerResponse> players(String gameKey, String season) {
+        return paginate(
+                (token, start) -> client.getGamePlayers(token, gameKey, start, season),
+                root -> root.path("fantasy_content").path("game").path(1).path("players"),
+                "game " + sanitize(gameKey));
+    }
+
+    /**
+     * Every player in a league's collection — the same universe, reached the way the Fantasy API
+     * is meant to be asked: through a league the account belongs to.
+     */
+    public List<YahooPlayerResponse> leaguePlayers(String leagueKey, String season) {
+        return paginate(
+                (token, start) -> client.getLeaguePlayers(token, leagueKey, start, season),
+                root -> root.path("fantasy_content").path("league").path(1).path("players"),
+                "league " + sanitize(leagueKey));
+    }
+
+    /** One page of players, by offset. */
+    private interface Page {
+        JsonNode fetch(String accessToken, int start);
+    }
+
+    private List<YahooPlayerResponse> paginate(
+            Page page, java.util.function.Function<JsonNode, JsonNode> playersNode, String what) {
         String accessToken = oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID);
         List<YahooPlayerResponse> all = new ArrayList<>();
-        for (int page = 0; page < MAX_PAGES; page++) {
-            JsonNode root = client.getGamePlayers(accessToken, gameKey, page * PAGE_SIZE, season);
-            JsonNode playersNode = root.path("fantasy_content").path("game").path(1).path("players");
-            List<JsonNode> entries = numericChildren(playersNode);
+        for (int index = 0; index < MAX_PAGES; index++) {
+            JsonNode root = page.fetch(accessToken, index * PAGE_SIZE);
+            List<JsonNode> entries = numericChildren(playersNode.apply(root));
             for (JsonNode entry : entries) {
                 YahooPlayerResponse player = parsePlayer(entry);
                 if (player != null) {
@@ -52,9 +79,13 @@ public class YahooPlayerService {
                 return all;
             }
         }
-        log.warn("Yahoo player pagination hit the {}-page cap for game {}; result may be truncated",
-                MAX_PAGES, gameKey.replace("\r", "_").replace("\n", "_"));
+        log.warn("Yahoo player pagination hit the {}-page cap for {}; result may be truncated",
+                MAX_PAGES, what);
         return all;
+    }
+
+    private static String sanitize(String value) {
+        return value == null ? "" : value.replace("\r", "_").replace("\n", "_");
     }
 
     private static YahooPlayerResponse parsePlayer(JsonNode entry) {

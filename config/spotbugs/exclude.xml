@@ -40,7 +40,8 @@
          YahooPlayerService: the interpolated gameKey. YahooOAuthController: the OAuth callback's
          error/state value. HeadshotSyncService: the failure text of an image fetch, which can
          quote a URL Yahoo gave us. YahooProbeService: the probe path and Yahoo's error body,
-         both truncated and stripped of CR/LF by forLog before they reach the log. -->
+         both truncated and stripped of CR/LF by forLog before they reach the log. SyncService:
+         the league key Yahoo hands back, stripped the same way. -->
     <Match>
         <Bug pattern="CRLF_INJECTION_LOGS"/>
         <Or>
@@ -48,6 +49,7 @@
             <Class name="com.fantasy.yahoo.oauth.YahooOAuthController"/>
             <Class name="com.fantasy.yahoo.players.HeadshotSyncService"/>
             <Class name="com.fantasy.yahoo.players.YahooProbeService"/>
+            <Class name="com.fantasy.yahoo.players.SyncService"/>
         </Or>
     </Match>
 </FindBugsFilter>

@@ -1,5 +1,8 @@
 package com.fantasy.yahoo.players;
 
+import com.fantasy.yahoo.league.YahooLeagueService;
+import com.fantasy.yahoo.league.dto.LeagueSummary;
+import com.fantasy.yahoo.league.dto.LeaguesResponse;
 import com.fantasy.yahoo.player.YahooPlayerService;
 import com.fantasy.yahoo.player.dto.YahooGoalieStats;
 import com.fantasy.yahoo.player.dto.YahooPlayerResponse;
@@ -31,8 +34,13 @@ class SyncServiceTest {
 
     private static final int SEASON = 2026;
 
+    private static final String LEAGUE_KEY = "465.l.12345";
+
     @Mock
     private YahooPlayerService yahooPlayerService;
+
+    @Mock
+    private YahooLeagueService leagueService;
 
     @Mock
     private SkaterRepository skaterRepository;
@@ -53,9 +61,14 @@ class SyncServiceTest {
     private HeadshotSyncService headshotSyncService;
 
     private SyncService syncService() {
-        return new SyncService(yahooPlayerService, skaterRepository, goalieRepository,
+        return new SyncService(yahooPlayerService, leagueService, skaterRepository, goalieRepository,
                 skaterSeasonRepository, goalieSeasonRepository, syncRunRepository,
                 headshotSyncService, SEASON);
+    }
+
+    private void givenLeagueForSeason(int leagueSeason) {
+        when(leagueService.leagues(any())).thenReturn(new LeaguesResponse(
+                List.of(new LeagueSummary(LEAGUE_KEY, "Test League", leagueSeason, 12, "head"))));
     }
 
     @Test
@@ -142,14 +155,49 @@ class SyncServiceTest {
         assertThat(savedRun().error).contains("preserving existing data");
     }
 
+    /**
+     * Through a league, not through the game. Yahoo refuses the game-wide collection outright,
+     * and its own documented client offers no game-wide player listing at all.
+     */
     @Test
-    void asksYahooForTheSeasonBeingCollected() {
+    void readsThePoolThroughTheAccountsLeague() {
         givenStored();
         givenYahooReturns(skaterWithoutStats(9));
 
         syncService().sync();
 
-        verify(yahooPlayerService).players("nhl", "2026");
+        verify(yahooPlayerService).leaguePlayers(LEAGUE_KEY, "2026");
+        verify(yahooPlayerService, never()).players(any(), any());
+    }
+
+    /**
+     * A league key belongs to one season's game, so reading last season's league would quietly
+     * cache last season's roster. The season being collected picks the league.
+     */
+    @Test
+    void prefersTheLeagueForTheSeasonBeingCollected() {
+        givenStored();
+        when(leagueService.leagues(any())).thenReturn(new LeaguesResponse(List.of(
+                new LeagueSummary("453.l.999", "Last season", SEASON - 1, 12, "head"),
+                new LeagueSummary(LEAGUE_KEY, "This season", SEASON, 12, "head"))));
+        when(yahooPlayerService.leaguePlayers(LEAGUE_KEY, String.valueOf(SEASON)))
+                .thenReturn(List.of(skaterWithoutStats(9)));
+
+        syncService().sync();
+
+        verify(yahooPlayerService).leaguePlayers(LEAGUE_KEY, "2026");
+    }
+
+    /** Without a league there is nothing to read through, and that has to be said, not guessed. */
+    @Test
+    void failsClearlyWhenTheAccountIsInNoLeagues() {
+        givenStored();
+        when(leagueService.leagues(any())).thenReturn(new LeaguesResponse(List.of()));
+
+        syncService().sync();
+
+        assertThat(savedRun().status).isEqualTo("failed");
+        assertThat(savedRun().error).contains("no leagues");
     }
 
     @Test
@@ -193,7 +241,9 @@ class SyncServiceTest {
     }
 
     private void givenYahooReturns(YahooPlayerResponse... players) {
-        when(yahooPlayerService.players("nhl", String.valueOf(SEASON))).thenReturn(List.of(players));
+        givenLeagueForSeason(SEASON);
+        when(yahooPlayerService.leaguePlayers(LEAGUE_KEY, String.valueOf(SEASON)))
+                .thenReturn(List.of(players));
     }
 
     private SyncRun savedRun() {

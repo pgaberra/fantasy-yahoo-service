@@ -1,5 +1,8 @@
 package com.fantasy.yahoo.players;
 
+import com.fantasy.yahoo.league.YahooLeagueService;
+import com.fantasy.yahoo.league.dto.LeagueSummary;
+import com.fantasy.yahoo.oauth.YahooOAuthService;
 import com.fantasy.yahoo.player.YahooPlayerService;
 import com.fantasy.yahoo.player.dto.YahooGoalieStats;
 import com.fantasy.yahoo.player.dto.YahooPlayerResponse;
@@ -33,14 +36,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * it is collecting ({@code sync.yahoo-season}). Earlier seasons are never touched, so pointing
  * the sync at a new season starts filling that one in while the finished one stays exactly as
  * it was — which is what lets the app collect this season and still show last season's numbers.
+ *
+ * <p>The pool is read <b>through a league</b> the service account belongs to, not through the
+ * game. That is the only route the Fantasy API documents — its own client offers no game-wide
+ * player listing — and the game-wide collection we used until June 2026 is now refused outright.
+ * The league is discovered rather than configured: a league key contains the game key, so it
+ * changes every season, and pinning one would mean editing config each autumn. Join the service
+ * account to a league for the season and the sync finds it.
  */
 @Service
 public class SyncService {
 
     private static final Logger log = LoggerFactory.getLogger(SyncService.class);
-
-    /** Yahoo's alias for the game that is current — the pool we cache is always the live one. */
-    private static final String GAME_KEY = "nhl";
 
     // Own Jackson 2 mapper for the added/removed JSON columns: Spring Boot 4's bean is
     // Jackson 3, so we don't inject one (same pattern as YahooFantasyClient).
@@ -56,6 +63,7 @@ public class SyncService {
     private static final double MIN_RETAINED_SHARE = 0.8;
 
     private final YahooPlayerService yahooPlayerService;
+    private final YahooLeagueService leagueService;
     private final SkaterRepository skaterRepository;
     private final GoalieRepository goalieRepository;
     private final SkaterSeasonRepository skaterSeasonRepository;
@@ -67,6 +75,7 @@ public class SyncService {
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     public SyncService(YahooPlayerService yahooPlayerService,
+                       YahooLeagueService leagueService,
                        SkaterRepository skaterRepository,
                        GoalieRepository goalieRepository,
                        SkaterSeasonRepository skaterSeasonRepository,
@@ -75,6 +84,7 @@ public class SyncService {
                        HeadshotSyncService headshotSyncService,
                        @Value("${sync.yahoo-season}") int season) {
         this.yahooPlayerService = yahooPlayerService;
+        this.leagueService = leagueService;
         this.skaterRepository = skaterRepository;
         this.goalieRepository = goalieRepository;
         this.skaterSeasonRepository = skaterSeasonRepository;
@@ -116,7 +126,9 @@ public class SyncService {
             previousLabels.put(g.id, label(g.firstName, g.lastName, g.teamAbbrev));
         }
 
-        List<YahooPlayerResponse> players = yahooPlayerService.players(GAME_KEY, String.valueOf(season));
+        String leagueKey = leagueToReadThrough();
+        List<YahooPlayerResponse> players =
+                yahooPlayerService.leaguePlayers(leagueKey, String.valueOf(season));
         if (players.isEmpty()) {
             // Never wipe the read model on an empty fetch — Yahoo is the only source.
             throw new IllegalStateException("Yahoo returned no players; preserving existing data");
@@ -240,6 +252,37 @@ public class SyncService {
                 r.skaters, r.goalies,
                 r.addedCount == null ? 0 : r.addedCount, r.removedCount == null ? 0 : r.removedCount,
                 fromJson(r.added), fromJson(r.removed), r.error);
+    }
+
+    /**
+     * A league of the service account's for the season being collected. Preferring that season
+     * matters: a league key belongs to one season's game, and reading last season's league would
+     * quietly cache last season's roster. Falling back to any league is better than failing —
+     * the collection is the game's player universe either way — but it is worth saying out loud.
+     */
+    private String leagueToReadThrough() {
+        List<LeagueSummary> leagues = leagueService.leagues(YahooOAuthService.SERVICE_ACCOUNT_ID)
+                .leagues();
+        if (leagues.isEmpty()) {
+            throw new IllegalStateException(
+                    "The Yahoo service account is in no leagues, so there is nothing to read the "
+                            + "player pool through. Join it to a league for season " + season + ".");
+        }
+        for (LeagueSummary league : leagues) {
+            if (league.season() != null && league.season() == season) {
+                return league.leagueKey();
+            }
+        }
+        LeagueSummary fallback = leagues.getFirst();
+        // The key comes from Yahoo, so it is stripped of CR/LF before it reaches the log.
+        log.warn("No league found for season {}; reading the pool through {} (season {}) instead",
+                season, forLog(fallback.leagueKey()), fallback.season());
+        return fallback.leagueKey();
+    }
+
+    /** Yahoo's own text on one line: lines() splits on CR, LF and CRLF, and joining drops them. */
+    private static String forLog(String value) {
+        return value == null ? "" : String.join(" ", value.lines().toList());
     }
 
     private static String label(String firstName, String lastName, String teamAbbrev) {
