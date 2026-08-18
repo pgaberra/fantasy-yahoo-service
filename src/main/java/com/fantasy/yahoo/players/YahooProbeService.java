@@ -28,6 +28,10 @@ public class YahooProbeService {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /** The one value {@code target} takes. Matched exactly: a typo must not quietly ask
+     * something else, which is the failure mode this whole tool exists to remove. */
+    private static final String LEAGUES_TARGET = "leagues";
+
     private final YahooOAuthService oauthService;
     private final YahooFantasyClient client;
 
@@ -59,7 +63,7 @@ public class YahooProbeService {
         }
 
         Attempt attempt;
-        if ("leagues".equalsIgnoreCase(target)) {
+        if (LEAGUES_TARGET.equals(target)) {
             attempt = client.attemptUserLeagues(accessToken);
         } else if (hasText(leagueKey)) {
             attempt = client.attemptLeaguePlayers(accessToken, leagueKey);
@@ -72,7 +76,7 @@ public class YahooProbeService {
             return new YahooProbeResponse(false, attempt.path(), attempt.status(), null,
                     describe(attempt));
         }
-        if ("leagues".equalsIgnoreCase(target)) {
+        if (LEAGUES_TARGET.equals(target)) {
             // A leagues page carries no players, so counting them would read as an empty game.
             return new YahooProbeResponse(true, attempt.path(), attempt.status(), null, null);
         }
@@ -144,7 +148,7 @@ public class YahooProbeService {
     }
 
     private static String path(String gameKey, String season, String leagueKey, String target) {
-        if ("leagues".equalsIgnoreCase(target)) {
+        if (LEAGUES_TARGET.equals(target)) {
             return "/users;use_login=1/games;game_keys=nhl/leagues";
         }
         if (hasText(leagueKey)) {
