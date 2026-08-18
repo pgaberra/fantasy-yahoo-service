@@ -12,6 +12,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -38,7 +40,11 @@ class YahooProbeServiceTest {
     private YahooFantasyClient client;
 
     private YahooProbeResponse probe(String gameKey, String season) {
-        return new YahooProbeService(oauthService, client).probe(gameKey, season);
+        return new YahooProbeService(oauthService, client).probe(gameKey, season, null);
+    }
+
+    private YahooProbeResponse probeLeague(String leagueKey) {
+        return new YahooProbeService(oauthService, client).probe("nhl", null, leagueKey);
     }
 
     @Test
@@ -92,6 +98,26 @@ class YahooProbeServiceTest {
         assertThat(response.ok()).isFalse();
         assertThat(response.status()).isNull();
         assertThat(response.error()).isEqualTo("connection timed out");
+    }
+
+    /**
+     * The whole point of asking a league instead: the granted scope is about the user's own
+     * leagues, so a league may be served where a whole game's collection is refused. If the two
+     * answers differ, that difference is the diagnosis — so a league key must actually change
+     * which call goes out.
+     */
+    @Test
+    void asksTheLeaguesPlayersWhenGivenALeagueKey() {
+        when(oauthService.validAccessToken(any())).thenReturn("token");
+        when(client.attemptLeaguePlayers(eq("token"), eq("465.l.12345"))).thenReturn(
+                new Attempt("/league/465.l.12345/players", 200, ONE_PLAYER_PAGE, null));
+
+        YahooProbeResponse response = probeLeague("465.l.12345");
+
+        assertThat(response.ok()).isTrue();
+        assertThat(response.players()).isEqualTo(1);
+        assertThat(response.path()).contains("465.l.12345");
+        verify(client, never()).attemptGamePlayers(any(), any(), any());
     }
 
     /** A 200 that is not a player page is not a pass — it would read as "the game is empty". */

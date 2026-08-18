@@ -38,21 +38,26 @@ public class YahooProbeService {
 
     /**
      * @param gameKey Yahoo game to ask about — {@code nhl} for whichever season is current, or a
-     *     numeric key to pin a past one
+     *     numeric key to pin a past one. Ignored when a league key is given.
      * @param season season start year, or blank to send no season filter at all
+     * @param leagueKey ask a league's player collection instead of the game's. The granted scope
+     *     is about the user's own leagues, so this is the one that may be allowed when the other
+     *     is not — and the difference between the two answers is the diagnosis.
      */
-    public YahooProbeResponse probe(String gameKey, String season) {
+    public YahooProbeResponse probe(String gameKey, String season, String leagueKey) {
         String accessToken;
         try {
             accessToken = oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID);
         } catch (RuntimeException e) {
             // Not being connected is itself a finding, and the most common one — report it in the
             // same shape as everything else rather than as an error status on this endpoint.
-            return new YahooProbeResponse(false, path(gameKey, season), null, null,
+            return new YahooProbeResponse(false, path(gameKey, season, leagueKey), null, null,
                     "No usable service-account token: " + e.getMessage());
         }
 
-        Attempt attempt = client.attemptGamePlayers(accessToken, gameKey, season);
+        Attempt attempt = hasText(leagueKey)
+                ? client.attemptLeaguePlayers(accessToken, leagueKey)
+                : client.attemptGamePlayers(accessToken, gameKey, season);
         if (!attempt.ok()) {
             log.info("Yahoo probe for {} answered {}: {}", forLog(attempt.path()), attempt.status(),
                     forLog(attempt.body()));
@@ -122,8 +127,15 @@ public class YahooProbeService {
         return stripped.length() > 300 ? stripped.substring(0, 300) : stripped;
     }
 
-    private static String path(String gameKey, String season) {
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
+    }
+
+    private static String path(String gameKey, String season, String leagueKey) {
+        if (hasText(leagueKey)) {
+            return "/league/" + leagueKey + "/players";
+        }
         return "/game/" + gameKey + "/players"
-                + (season == null || season.isBlank() ? "" : " (season=" + season + ")");
+                + (hasText(season) ? " (season=" + season + ")" : "");
     }
 }

@@ -78,19 +78,41 @@ public class YahooFantasyClient {
      */
     public Attempt attemptGamePlayers(String accessToken, String gameKey, String season) {
         String path = gamePlayersPath(gameKey, 0, season);
+        return attempt(accessToken, path, path);
+    }
+
+    /**
+     * The same question asked of a league rather than a whole game.
+     *
+     * <p>Worth having both: the granted Fantasy Sports scope talks about the user's own teams and
+     * leagues, while a game's player collection belongs to nobody in particular. If one is refused
+     * and the other is not, that difference is the answer.
+     */
+    public Attempt attemptLeaguePlayers(String accessToken, String leagueKey) {
+        // The key is caller-supplied, so it goes in as a URI-template variable and gets encoded
+        // into a single path segment — a stray '/' or '?' cannot reshape the request.
+        return attempt(accessToken, leaguePlayersPath("{leagueKey}"),
+                leaguePlayersPath(leagueKey), leagueKey);
+    }
+
+    private Attempt attempt(String accessToken, String uriTemplate, String display, Object... vars) {
         try {
             String body = restClient.get()
-                    .uri(path)
+                    .uri(uriTemplate, vars)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                     .retrieve()
                     .body(String.class);
-            return new Attempt(path, 200, body, null);
+            return new Attempt(display, 200, body, null);
         } catch (RestClientResponseException e) {
-            return new Attempt(path, e.getStatusCode().value(), e.getResponseBodyAsString(),
+            return new Attempt(display, e.getStatusCode().value(), e.getResponseBodyAsString(),
                     e.getStatusText());
         } catch (RestClientException e) {
-            return new Attempt(path, null, null, e.getMessage());
+            return new Attempt(display, null, null, e.getMessage());
         }
+    }
+
+    private static String leaguePlayersPath(String leagueKey) {
+        return "/league/" + leagueKey + "/players;start=0;count=25/stats;type=season?format=json";
     }
 
     private static String gamePlayersPath(String gameKey, int start, String season) {

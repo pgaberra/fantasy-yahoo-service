@@ -81,12 +81,17 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   settings in different services — `SYNC_YAHOO_SEASON` here says what to collect, and the BFF
   decides what to show by asking `/api/v1/players/*?season=`.
 
-  `YahooProbeService` (`GET /api/v1/sync/probe?gameKey=&season=`) asks Yahoo one question and
+  `YahooProbeService` (`GET /api/v1/sync/probe?gameKey=&season=&leagueKey=`) asks Yahoo one question and
   reports the answer as data: can the service account read this game's players for this season?
   A sync failure only says *something* was refused; telling a refused season from a refused game
   from a dead token means varying one input at a time and reading the raw status, which is what
-  this is for. It reads nothing into the cache and writes nothing, so it is safe to fire at any
-  game key. The BFF exposes it to admins.
+  this is for. Give it a `leagueKey` and it asks a *league's* player collection instead: the
+  granted Fantasy Sports scope talks about the user's own leagues, while a game's collection
+  belongs to nobody in particular, so one may be served where the other is refused — and that
+  difference is the diagnosis. `GET /api/v1/sync/leagues` lists the service account's own leagues
+  with their keys, which both saves hunting for one and doubles as a test: if it succeeds while a
+  game probe is refused, the account and its permission are fine. Neither reads into the cache nor
+  writes anything, so both are safe to fire at will. The BFF exposes them to admins.
 
   `SYNC_YAHOO_DISABLED` remains the off-season switch: it skips the scheduled run entirely,
   for the months when Yahoo has no active game to call at all. A failed run logs at `ERROR`
