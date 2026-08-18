@@ -82,8 +82,9 @@ public class SyncController {
     public YahooProbeResponse probe(
             @RequestParam(defaultValue = "nhl") String gameKey,
             @RequestParam(required = false) String season,
-            @RequestParam(required = false) String leagueKey) {
-        return probeService.probe(gameKey, season, leagueKey);
+            @RequestParam(required = false) String leagueKey,
+            @RequestParam(required = false) String target) {
+        return probeService.probe(gameKey, season, leagueKey, target);
     }
 
     @Operation(summary = "The service account's own leagues",
