@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.util.Set;
+
 @Tag(name = "Yahoo OAuth", description = "Per-user Yahoo account connection flow")
 @RestController
 @RequestMapping("/api/v1/yahoo/oauth")
@@ -51,13 +53,16 @@ public class YahooOAuthController {
     public ResponseEntity<Void> callback(@RequestParam(required = false) String code,
                                          @RequestParam(required = false) String state,
                                          @RequestParam(required = false) String error) {
-        Outcome outcome = connect(code, state, error);
+        Result result = connect(code, state, error);
         UriComponentsBuilder target = UriComponentsBuilder.fromUriString(props.webPostConnectUrl())
-                .queryParam("yahoo", outcome == Outcome.CONNECTED ? "connected" : "error");
-        if (outcome != Outcome.CONNECTED) {
+                .queryParam("yahoo", result.outcome() == Outcome.CONNECTED ? "connected" : "error");
+        if (result.outcome() != Outcome.CONNECTED) {
             // Always one of our own fixed slugs -- nothing the request supplied is echoed back
             // into the redirect.
-            target.queryParam("reason", outcome.slug());
+            target.queryParam("reason", result.outcome().slug());
+            if (result.detail() != null) {
+                target.queryParam("detail", result.detail());
+            }
         }
         return ResponseEntity.status(HttpStatus.FOUND).location(target.build().toUri()).build();
     }
@@ -85,27 +90,57 @@ public class YahooOAuthController {
         }
     }
 
-    private Outcome connect(String code, String state, String error) {
+    /**
+     * The OAuth error codes Yahoo is allowed to send back (RFC 6749 §4.1.2.1). Anything outside
+     * this set is dropped rather than passed on: the value comes from the request, and only a
+     * known-good vocabulary may reach a redirect URL.
+     *
+     * <p>Worth carrying at all because these say very different things. {@code access_denied} is
+     * someone pressing no; {@code invalid_scope} or {@code unauthorized_client} is Yahoo refusing
+     * to let this app ask for Fantasy data in the first place, which is a problem no amount of
+     * retrying fixes.
+     */
+    private static final Set<String> YAHOO_ERRORS = Set.of(
+            "access_denied",
+            "invalid_request",
+            "invalid_scope",
+            "server_error",
+            "temporarily_unavailable",
+            "unauthorized_client",
+            "unsupported_response_type");
+
+    /** A connect attempt's outcome, plus Yahoo's own word for it where we were given one. */
+    private record Result(Outcome outcome, String detail) {
+        static Result of(Outcome outcome) {
+            return new Result(outcome, null);
+        }
+    }
+
+    private Result connect(String code, String state, String error) {
         if (StringUtils.hasText(error) || !StringUtils.hasText(code) || !StringUtils.hasText(state)) {
             // The user declined consent (Yahoo sends ?error=access_denied, no code) or the callback
             // arrived incomplete — an expected client outcome, not a server fault, so don't alert.
             log.info("Yahoo OAuth callback did not complete (error={})", sanitizeForLog(error));
-            return Outcome.DECLINED;
+            return new Result(Outcome.DECLINED, knownYahooError(error));
         }
         try {
             oauthService.handleCallback(code, state);
-            return Outcome.CONNECTED;
+            return Result.of(Outcome.CONNECTED);
         } catch (IllegalArgumentException invalidState) {
             // Forged / expired / malformed state — a client error, and the usual shape of a bot
             // probing the public callback. Log at WARN so it can't flood ERROR alerting (Sentry).
             log.warn("Yahoo OAuth callback rejected an invalid state: {}",
                     sanitizeForLog(invalidState.getMessage()));
-            return Outcome.INVALID_STATE;
+            return Result.of(Outcome.INVALID_STATE);
         } catch (RuntimeException fault) {
             // A genuine fault (token exchange failed, storage error) — worth an ERROR and an alert.
             log.error("Yahoo OAuth callback failed", fault);
-            return Outcome.EXCHANGE_FAILED;
+            return Result.of(Outcome.EXCHANGE_FAILED);
         }
+    }
+
+    private static String knownYahooError(String error) {
+        return error != null && YAHOO_ERRORS.contains(error) ? error : null;
     }
 
     // Strip CR/LF from a request-controlled value before logging it (defends against log forging).

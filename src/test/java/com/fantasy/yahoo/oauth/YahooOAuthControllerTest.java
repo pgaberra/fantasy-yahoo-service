@@ -40,10 +40,29 @@ class YahooOAuthControllerTest {
     @Test
     void callback_whenConsentDenied_redirectsWithErrorAndDoesNotCallService() {
         ResponseEntity<Void> response = controller.callback(null, "the-state", "access_denied");
-        // Declined and "Yahoo sent no code" are indistinguishable from here, and mean the same
-        // thing to whoever pressed the button: no code came back.
 
         verify(oauthService, never()).handleCallback(any(), any());
+        assertThat(response.getHeaders().getLocation())
+                .hasToString(WEB + "?yahoo=error&reason=declined&detail=access_denied");
+    }
+
+    /**
+     * The difference that matters: someone pressing no looks nothing like Yahoo refusing to let
+     * the app ask at all, and only Yahoo's own word for it tells them apart.
+     */
+    @Test
+    void callback_whenYahooRefusesTheScope_passesItsOwnWordOn() {
+        ResponseEntity<Void> response = controller.callback(null, "the-state", "invalid_scope");
+
+        assertThat(response.getHeaders().getLocation())
+                .hasToString(WEB + "?yahoo=error&reason=declined&detail=invalid_scope");
+    }
+
+    /** Only a known vocabulary reaches the redirect -- the value came from the request. */
+    @Test
+    void callback_withAnErrorWeDoNotKnow_dropsIt() {
+        ResponseEntity<Void> response = controller.callback(null, "the-state", "../../evil");
+
         assertThat(response.getHeaders().getLocation())
                 .hasToString(WEB + "?yahoo=error&reason=declined");
     }
