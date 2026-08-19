@@ -40,9 +40,12 @@ class YahooOAuthControllerTest {
     @Test
     void callback_whenConsentDenied_redirectsWithErrorAndDoesNotCallService() {
         ResponseEntity<Void> response = controller.callback(null, "the-state", "access_denied");
+        // Declined and "Yahoo sent no code" are indistinguishable from here, and mean the same
+        // thing to whoever pressed the button: no code came back.
 
         verify(oauthService, never()).handleCallback(any(), any());
-        assertThat(response.getHeaders().getLocation()).hasToString(WEB + "?yahoo=error");
+        assertThat(response.getHeaders().getLocation())
+                .hasToString(WEB + "?yahoo=error&reason=declined");
     }
 
     @Test
@@ -50,9 +53,15 @@ class YahooOAuthControllerTest {
         ResponseEntity<Void> response = controller.callback(null, "the-state", null);
 
         verify(oauthService, never()).handleCallback(any(), any());
-        assertThat(response.getHeaders().getLocation()).hasToString(WEB + "?yahoo=error");
+        assertThat(response.getHeaders().getLocation())
+                .hasToString(WEB + "?yahoo=error&reason=declined");
     }
 
+    /**
+     * An expired state is the likely shape of a slow reconnect -- longer than the state's ten
+     * minutes. Saying so is the difference between "try again, faster" and hunting a problem
+     * that is not there.
+     */
     @Test
     void callback_withInvalidState_redirectsWithError() {
         doThrow(new IllegalArgumentException("OAuth state signature mismatch"))
@@ -60,6 +69,22 @@ class YahooOAuthControllerTest {
 
         ResponseEntity<Void> response = controller.callback("the-code", "bad-state", null);
 
-        assertThat(response.getHeaders().getLocation()).hasToString(WEB + "?yahoo=error");
+        assertThat(response.getHeaders().getLocation())
+                .hasToString(WEB + "?yahoo=error&reason=invalid_state");
+    }
+
+    /**
+     * Yahoo refusing the code exchange is the one outcome that puts the fault on Yahoo rather
+     * than on whoever pressed the button, so it must not be lumped in with the others.
+     */
+    @Test
+    void callback_whenTheExchangeFails_saysSo() {
+        doThrow(new IllegalStateException("Yahoo token request failed: 400 Bad Request"))
+                .when(oauthService).handleCallback("the-code", "the-state");
+
+        ResponseEntity<Void> response = controller.callback("the-code", "the-state", null);
+
+        assertThat(response.getHeaders().getLocation())
+                .hasToString(WEB + "?yahoo=error&reason=exchange_failed");
     }
 }
