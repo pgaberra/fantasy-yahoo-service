@@ -19,8 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URI;
-
 @Tag(name = "Yahoo OAuth", description = "Per-user Yahoo account connection flow")
 @RestController
 @RequestMapping("/api/v1/yahoo/oauth")
@@ -53,33 +51,60 @@ public class YahooOAuthController {
     public ResponseEntity<Void> callback(@RequestParam(required = false) String code,
                                          @RequestParam(required = false) String state,
                                          @RequestParam(required = false) String error) {
-        boolean ok = connect(code, state, error);
-        URI target = UriComponentsBuilder.fromUriString(props.webPostConnectUrl())
-                .queryParam("yahoo", ok ? "connected" : "error")
-                .build().toUri();
-        return ResponseEntity.status(HttpStatus.FOUND).location(target).build();
+        Outcome outcome = connect(code, state, error);
+        UriComponentsBuilder target = UriComponentsBuilder.fromUriString(props.webPostConnectUrl())
+                .queryParam("yahoo", outcome == Outcome.CONNECTED ? "connected" : "error");
+        if (outcome != Outcome.CONNECTED) {
+            // Always one of our own fixed slugs -- nothing the request supplied is echoed back
+            // into the redirect.
+            target.queryParam("reason", outcome.slug());
+        }
+        return ResponseEntity.status(HttpStatus.FOUND).location(target.build().toUri()).build();
     }
 
-    private boolean connect(String code, String state, String error) {
+    /**
+     * How a connect attempt ended. The web app needs to tell these apart: a declined consent is
+     * someone changing their mind, an expired state is a slow round trip worth simply retrying,
+     * and a failed exchange is Yahoo refusing us -- which is the one worth investigating.
+     * Reporting all three as "error" is how a dead connection went unnoticed for two months.
+     */
+    private enum Outcome {
+        CONNECTED("connected"),
+        DECLINED("declined"),
+        INVALID_STATE("invalid_state"),
+        EXCHANGE_FAILED("exchange_failed");
+
+        private final String slug;
+
+        Outcome(String slug) {
+            this.slug = slug;
+        }
+
+        String slug() {
+            return slug;
+        }
+    }
+
+    private Outcome connect(String code, String state, String error) {
         if (StringUtils.hasText(error) || !StringUtils.hasText(code) || !StringUtils.hasText(state)) {
             // The user declined consent (Yahoo sends ?error=access_denied, no code) or the callback
             // arrived incomplete — an expected client outcome, not a server fault, so don't alert.
             log.info("Yahoo OAuth callback did not complete (error={})", sanitizeForLog(error));
-            return false;
+            return Outcome.DECLINED;
         }
         try {
             oauthService.handleCallback(code, state);
-            return true;
+            return Outcome.CONNECTED;
         } catch (IllegalArgumentException invalidState) {
             // Forged / expired / malformed state — a client error, and the usual shape of a bot
             // probing the public callback. Log at WARN so it can't flood ERROR alerting (Sentry).
             log.warn("Yahoo OAuth callback rejected an invalid state: {}",
                     sanitizeForLog(invalidState.getMessage()));
-            return false;
+            return Outcome.INVALID_STATE;
         } catch (RuntimeException fault) {
             // A genuine fault (token exchange failed, storage error) — worth an ERROR and an alert.
             log.error("Yahoo OAuth callback failed", fault);
-            return false;
+            return Outcome.EXCHANGE_FAILED;
         }
     }
 
