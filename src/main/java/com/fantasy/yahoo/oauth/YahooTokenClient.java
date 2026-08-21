@@ -2,6 +2,7 @@ package com.fantasy.yahoo.oauth;
 
 import com.fantasy.yahoo.config.YahooOAuthProperties;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.annotation.JsonNaming;
@@ -12,6 +13,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -27,6 +29,9 @@ import java.util.Base64;
  */
 @Component
 public class YahooTokenClient {
+
+    /** Yahoo's name for a grant it will never honour again. */
+    private static final String INVALID_GRANT = "invalid_grant";
 
     private final RestClient restClient;
     private final YahooOAuthProperties props;
@@ -64,6 +69,15 @@ public class YahooTokenClient {
                     .body(form)
                     .retrieve()
                     .body(String.class);
+        } catch (RestClientResponseException e) {
+            // A refused grant is not an outage: it is permanent, and the only fix is re-consent.
+            // Telling the two apart here is what lets the caller drop a dead token instead of
+            // retrying it forever. Checked before RestClientException, which is its supertype.
+            if (isInvalidGrant(e.getResponseBodyAsString())) {
+                throw new YahooGrantRejectedException(
+                        "Yahoo rejected the grant: " + e.getMessage(), e);
+            }
+            throw new IllegalStateException("Yahoo token request failed: " + e.getMessage(), e);
         } catch (RestClientException e) {
             throw new IllegalStateException("Yahoo token request failed: " + e.getMessage(), e);
         }
@@ -74,6 +88,23 @@ public class YahooTokenClient {
             return objectMapper.readValue(body, TokenResponse.class);
         } catch (Exception e) {
             throw new IllegalStateException("Yahoo token endpoint returned unparseable JSON", e);
+        }
+    }
+
+    /**
+     * Reads the {@code error} field rather than looking for the word anywhere in the response, so
+     * an unrelated failure that happens to quote it is not mistaken for a dead grant. An
+     * unparseable body is not one either — that is a malformed answer, not a verdict.
+     */
+    private boolean isInvalidGrant(String body) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        try {
+            JsonNode error = objectMapper.readTree(body).path("error");
+            return INVALID_GRANT.equals(error.asText());
+        } catch (Exception e) {
+            return false;
         }
     }
 
