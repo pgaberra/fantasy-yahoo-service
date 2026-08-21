@@ -1,6 +1,8 @@
 package com.fantasy.yahoo.oauth;
 
 import com.fantasy.yahoo.config.YahooOAuthProperties;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +21,8 @@ import java.util.UUID;
  */
 @Service
 public class YahooOAuthService {
+
+    private static final Logger log = LoggerFactory.getLogger(YahooOAuthService.class);
 
     /**
      * Reserved app-user id for the single, app-owned Yahoo "service account" whose token is
@@ -95,12 +99,29 @@ public class YahooOAuthService {
         pendingStateRepository.deleteByExpiresAtBefore(Instant.now());
     }
 
+    /**
+     * Whether a usable Yahoo connection exists. True means a stored token Yahoo has not refused —
+     * {@link #validAccessToken} drops the row as soon as it does, so this cannot go on claiming a
+     * connection that no longer works.
+     */
     public boolean isConnected(String appUserId) {
         return repository.existsByAppUserId(appUserId);
     }
 
-    /** A valid Yahoo access token for the user, refreshed if necessary. (Used in phase 2.) */
-    @Transactional
+    /**
+     * A valid Yahoo access token for the user, refreshed if necessary.
+     *
+     * <p>When Yahoo rejects the stored refresh token the row is deleted rather than kept and
+     * retried. A rejected grant is permanent — only fresh consent replaces it — so keeping it would
+     * leave {@link #isConnected} reporting a connection that cannot work, hide the reconnect the
+     * user actually needs, and log an upstream ERROR on every retry. The caller is told the account
+     * is not connected, which by then is exactly true.
+     *
+     * <p>{@code noRollbackFor} is what makes the deletion stick: it has to survive the exception
+     * that reports it. Safe because this method is the outermost transaction on every path that
+     * reaches it — no caller of it is itself {@code @Transactional}.
+     */
+    @Transactional(noRollbackFor = YahooNotConnectedException.class)
     public String validAccessToken(String appUserId) {
         YahooOAuthToken token = repository.findByAppUserId(appUserId)
                 .orElseThrow(() -> new YahooNotConnectedException(
@@ -109,8 +130,19 @@ public class YahooOAuthService {
         if (now.isBefore(token.getAccessExpiresAt().minusSeconds(EXPIRY_SKEW_SECONDS))) {
             return cipher.decrypt(token.getAccessTokenEnc());
         }
-        YahooTokenClient.TokenResponse refreshed =
-                tokenClient.refresh(cipher.decrypt(token.getRefreshTokenEnc()));
+        YahooTokenClient.TokenResponse refreshed;
+        try {
+            refreshed = tokenClient.refresh(cipher.decrypt(token.getRefreshTokenEnc()));
+        } catch (YahooGrantRejectedException e) {
+            repository.delete(token);
+            // WARN, not ERROR: the service did its job and the remedy is a human reconnecting an
+            // account, so this must not raise a Sentry alert every time something retries. The id
+            // is reduced to a constant because appUserId is request-supplied.
+            log.warn("Yahoo rejected the stored refresh token for the {}; dropped it, "
+                    + "reconnect required", SERVICE_ACCOUNT_ID.equals(appUserId) ? "service account" : "user");
+            throw new YahooNotConnectedException(
+                    "Yahoo rejected the stored authorization; reconnect the Yahoo account");
+        }
         upsert(appUserId, refreshed, now);
         return refreshed.accessToken();
     }

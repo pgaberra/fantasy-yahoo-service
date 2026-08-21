@@ -7,6 +7,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -98,5 +99,58 @@ class YahooOAuthServiceTest {
         assertThatThrownBy(() -> service.handleCallback("the-code", state))
                 .isInstanceOf(IllegalArgumentException.class);
         verify(tokenClient, never()).exchangeCode(any());
+    }
+
+    @Test
+    void validAccessToken_whenYahooRejectsTheGrant_dropsTheTokenAndReportsNotConnected() {
+        // The point of the drop: isConnected() must stop claiming a connection that cannot work,
+        // so the UI offers a reconnect instead of retrying a token Yahoo will never honour.
+        YahooOAuthToken stored = expiredToken();
+        when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.of(stored));
+        when(cipher.decrypt("rt-enc")).thenReturn("rt");
+        when(tokenClient.refresh("rt")).thenThrow(
+                new YahooGrantRejectedException("Yahoo rejected the grant", new RuntimeException()));
+
+        assertThatThrownBy(() -> service.validAccessToken("user-1"))
+                .isInstanceOf(YahooNotConnectedException.class);
+
+        verify(tokenRepository).delete(stored);
+        verify(tokenRepository, never()).save(any());
+    }
+
+    @Test
+    void validAccessToken_whenTheTokenEndpointMerelyFails_keepsTheTokenForALaterRetry() {
+        // The counterpart that stops the fix from over-reaching: a transient upstream failure
+        // must not cost the user their connection.
+        YahooOAuthToken stored = expiredToken();
+        when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.of(stored));
+        when(cipher.decrypt("rt-enc")).thenReturn("rt");
+        when(tokenClient.refresh("rt")).thenThrow(new IllegalStateException("Yahoo token request failed"));
+
+        assertThatThrownBy(() -> service.validAccessToken("user-1"))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(tokenRepository, never()).delete(any(YahooOAuthToken.class));
+    }
+
+    @Test
+    void validAccessToken_whenNoAccountIsConnected_reportsNotConnectedAndDeletesNothing() {
+        when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.validAccessToken("user-1"))
+                .isInstanceOf(YahooNotConnectedException.class);
+
+        verify(tokenClient, never()).refresh(any());
+        verify(tokenRepository, never()).delete(any(YahooOAuthToken.class));
+    }
+
+    /** A stored token whose access token has expired, so using it forces a refresh. */
+    private static YahooOAuthToken expiredToken() {
+        YahooOAuthToken token = new YahooOAuthToken();
+        token.setAppUserId("user-1");
+        token.setAccessTokenEnc("at-enc");
+        token.setRefreshTokenEnc("rt-enc");
+        token.setAccessExpiresAt(Instant.now().minus(1, ChronoUnit.HOURS));
+        return token;
     }
 }
