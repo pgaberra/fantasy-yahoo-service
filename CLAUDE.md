@@ -2,8 +2,10 @@
 
 Yahoo integration microservice for the fantasy hockey tool. It owns the **per-user
 OAuth 2.0 flow** with the Yahoo Fantasy Sports API, stores each user's tokens
-(encrypted) in its own Postgres database, and exposes a REST API the BFF consumes to
-read a user's fantasy **league settings** (scoring categories, roster positions, …).
+(encrypted) in its own Postgres database, and exposes a REST API the BFF consumes for
+a user's fantasy **league settings** (scoring categories, roster positions, …) **and the
+cached player read model** — identity, eligible positions and per-season stats for every
+player the app serves, refreshed by a scheduled sync (see `players/` below).
 
 > ⚠️ Guarded by a shared `X-Internal-Api-Key` header (see `InternalApiKeyFilter`). The
 > one exception is `/api/v1/yahoo/oauth/callback`, which Yahoo's browser redirect hits
@@ -17,7 +19,7 @@ web "Connect Yahoo" → BFF → POST /api/v1/yahoo/oauth/authorize-url?appUserId
    → browser → Yahoo consent → GET /api/v1/yahoo/oauth/callback?code&state
    → service verifies state, exchanges code→tokens, stores them encrypted,
      302-redirects the browser back to ${WEB_POST_CONNECT_URL}?yahoo=connected
-later: BFF → GET /api/v1/yahoo/leagues / …/settings (uses the stored tokens; phase 2)
+later: BFF → GET /api/v1/yahoo/leagues / …/settings (uses the stored tokens)
 ```
 
 ## Tech stack
@@ -50,7 +52,7 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
     (`YAHOO_STATE_SECRET`); CSRF protection without a server-side state table.
   - `YahooTokenClient` — calls Yahoo's `/oauth2/get_token` (code exchange + refresh).
   - `YahooOAuthService` — builds the authorize URL, handles the callback (verify→exchange
-    →store), and hands out a valid access token (refreshing transparently — phase 2 use).
+    →store), and hands out a valid access token (refreshing transparently).
   - `YahooOAuthController` — `/api/v1/yahoo/oauth/{authorize-url,callback,connection}`.
   - `dto/` — `AuthorizeUrlResponse`, `ConnectionResponse`.
 - `league/` — fantasy league data:
@@ -108,11 +110,6 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   for the months when Yahoo has no active game to call at all. A failed run logs at `ERROR`
   and therefore reaches Sentry, which is the signal that the season has ended.
 
-**Phase status:** OAuth connect flow + encrypted token storage + `/connection` **and**
-league discovery + settings are implemented. The BFF wiring lands in a parallel PR and the
-service deploys on Coolify behind a public callback domain (`yahoo.slapstat.com`). Remaining:
-the **web** Connect/picker UI.
-
 ## Database & config
 
 - `application.yaml`: datasource
@@ -138,18 +135,12 @@ the **web** Connect/picker UI.
 - Tokens (access + refresh) are **always encrypted at rest** — never store or log a raw
   token. The state and encryption keys come only from env (never committed).
 
-### Logging & error handling
+### Error handling
 
-**Never silence an error.** Every `@RestControllerAdvice` must have a catch-all
-`@ExceptionHandler(Exception.class)` that **logs the full stack trace** (`log.error`)
-and returns a consistent `ErrorDto`. Rules of thumb:
-
-- **5xx / genuine faults** (unexpected exceptions, the upstream Yahoo API failing): log
-  at `ERROR` with the exception.
-- **4xx / expected client outcomes** (not-connected, invalid OAuth state): do **not** log
-  as errors.
-- The OAuth **callback** never returns a JSON error to the browser — it logs the failure
-  and redirects back to the web app with `?yahoo=error`.
+The monorepo-wide rule (never silence an error; `ERROR` for 5xx, quiet for 4xx — here
+not-connected and invalid OAuth state are the ordinary 4xx) lives in the root `CLAUDE.md`.
+Specific here: the OAuth **callback** never returns a JSON error to the browser — it logs
+the failure and redirects back to the web app with `?yahoo=error`.
 
 ### OpenAPI annotations & spec snapshot (`specs/openapi.yaml`)
 
@@ -169,37 +160,13 @@ git add specs/openapi.yaml
 
 ## Monorepo conventions
 
-Shared across all five repos (`fantasy-web` → `fantasy-bff` → `fantasy-db-service` +
-`fantasy-nhl-service` + `fantasy-yahoo-service`). The web talks only to the BFF;
-inter-service calls use a shared `X-Internal-Api-Key` header.
-
-### Secrets
-
-**Never commit a password, API key, token, or any secret to git — in any environment**,
-not even throwaway local-dev credentials, so the habit is absolute and we never risk
-leaking (or reusing) a real one. Secrets come only from environment variables
-(`${DB_PASSWORD}`, `${INTERNAL_API_KEY}`, `${YAHOO_CLIENT_SECRET}`, …) — no literal value
-in `application*.yaml`. Non-secret connection details (host, port, db name, username) may
-be committed. The local-dev DB password lives only in `docker-compose.yml`. Run a service
-against a chosen DB with the `local` / `staging` Spring profiles:
-`SPRING_PROFILES_ACTIVE=<profile> DB_PASSWORD=… ./gradlew bootRun`.
-
-### Merging PRs
-
-Branch → push → PR → checks pass → **squash merge** to `master`. GitHub squash uses the
-**PR title** as the commit message, so make it a proper message (`feat: …`, `fix: …`), then
-merge with an explicit subject:
-```
-gh pr merge <n> --squash --delete-branch \
-  --subject "feat: describe the change (#<n>)" \
-  --body "Optional longer description."
-```
-Never merge a PR titled "wip"/"draft".
-
-### Commit messages
-
-No attribution trailers (`attribution.commit` / `attribution.pr` are `""` in
-`~/.claude/settings.json`, enforced at the tool level).
+The full set lives in the monorepo root `CLAUDE.md`: input validation at every boundary,
+logging & error handling, secrets only from env, one worktree per agent, and the merge
+procedure. In short — the web talks only to the BFF; inter-service calls carry a shared
+`X-Internal-Api-Key` header. Branch → push → PR → checks pass → **squash merge** to `master`
+(the PR title becomes the commit message; make it a proper `feat:`/`fix:` message and merge
+with an explicit `--subject`). No attribution trailers. Secrets only from env, never
+committed. Never merge a PR titled "wip"/"draft".
 
 ## Deployment
 
