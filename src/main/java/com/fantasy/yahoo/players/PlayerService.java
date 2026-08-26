@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -41,27 +42,70 @@ public class PlayerService {
 
     @Transactional(readOnly = true)
     public List<SkaterResponse> getSkaters(int season) {
+        return getSkaters(season, null);
+    }
+
+    /**
+     * The skaters, name-ordered as ever — or, given a limit, that many of the highest scoring.
+     *
+     * <p>The order only changes when a limit is asked for, because that is the only time it means
+     * anything: a caller taking the whole pool ranks it itself, and a caller taking five wants the
+     * five the board opens with rather than five players whose surnames begin with A.
+     */
+    @Transactional(readOnly = true)
+    public List<SkaterResponse> getSkaters(int season, Integer limit) {
         Map<Long, SkaterSeason> stats = new HashMap<>();
         for (SkaterSeason line : skaterSeasonRepository.findAllBySeason(season)) {
             stats.put(line.playerId, line);
         }
         Set<Long> withHeadshot = playerIdsWithHeadshot();
-        return skaterRepository.findAllByOrderByLastNameAscFirstNameAsc().stream()
+        List<SkaterResponse> skaters = skaterRepository.findAllByOrderByLastNameAscFirstNameAsc()
+                .stream()
                 .map(skater -> toSkaterResponse(skater, stats.get(skater.id),
                         withHeadshot.contains(skater.id)))
                 .toList();
+        return limit == null ? skaters : topBy(skaters, SkaterResponse::points, SkaterResponse::id, limit);
     }
 
     @Transactional(readOnly = true)
     public List<GoalieResponse> getGoalies(int season) {
+        return getGoalies(season, null);
+    }
+
+    /** The goalies, name-ordered — or, given a limit, that many of the winningest. */
+    @Transactional(readOnly = true)
+    public List<GoalieResponse> getGoalies(int season, Integer limit) {
         Map<Long, GoalieSeason> stats = new HashMap<>();
         for (GoalieSeason line : goalieSeasonRepository.findAllBySeason(season)) {
             stats.put(line.playerId, line);
         }
         Set<Long> withHeadshot = playerIdsWithHeadshot();
-        return goalieRepository.findAllByOrderByLastNameAscFirstNameAsc().stream()
+        List<GoalieResponse> goalies = goalieRepository.findAllByOrderByLastNameAscFirstNameAsc()
+                .stream()
                 .map(goalie -> toGoalieResponse(goalie, stats.get(goalie.id),
                         withHeadshot.contains(goalie.id)))
+                .toList();
+        return limit == null ? goalies : topBy(goalies, GoalieResponse::wins, GoalieResponse::id, limit);
+    }
+
+    /**
+     * The top {@code limit} by one stat, ties broken by id so the same request answers the same
+     * way twice. A player with no line for the season has no number at all, which sorts as none
+     * rather than as zero-but-present — either way, last.
+     */
+    private static <T> List<T> topBy(List<T> players,
+                                     java.util.function.Function<T, Integer> stat,
+                                     java.util.function.ToLongFunction<T> id,
+                                     int limit) {
+        return players.stream()
+                .sorted(Comparator
+                        .comparingInt((T player) -> {
+                            Integer value = stat.apply(player);
+                            return value == null ? 0 : value;
+                        })
+                        .reversed()
+                        .thenComparingLong(id))
+                .limit(limit)
                 .toList();
     }
 

@@ -7,12 +7,15 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,6 +26,7 @@ import java.util.List;
         description = "Cached player read model: the pool as it is now, with a chosen season's stats")
 @RestController
 @RequestMapping("/api/v1/players")
+@Validated
 public class PlayerController {
 
     private static final String SEASON_DESCRIPTION =
@@ -30,6 +34,14 @@ public class PlayerController {
                     + "and the season a caller wants to show are deliberately different for most "
                     + "of the year, so there is no sensible default. A player with no line for it "
                     + "comes back with no stats rather than being left out.";
+
+    private static final String LIMIT_DESCRIPTION =
+            "How many to return, highest scoring first (most wins, for goalies). Absent returns "
+                    + "the whole pool in name order, which is what a caller ranking every player "
+                    + "wants; a caller drawing a handful of rows should ask for a handful.";
+
+    /** Above this a slice is most of the pool anyway, so the cap costs a real caller nothing. */
+    private static final int MAX_LIMIT = 500;
 
     private static final Duration HEADSHOT_MAX_AGE = Duration.ofDays(7);
 
@@ -39,20 +51,38 @@ public class PlayerController {
         this.playerService = playerService;
     }
 
-    @Operation(summary = "All skaters with eligible positions and a season's stats")
-    @ApiResponse(responseCode = "200", description = "Skaters returned")
+    @Operation(summary = "Skaters with eligible positions and a season's stats",
+            description = "The whole pool, or its highest scoring when `limit` is given.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Skaters returned"),
+            @ApiResponse(responseCode = "400", description = "limit is not between 1 and 500")
+    })
     @GetMapping("/skaters")
     public List<SkaterResponse> skaters(
-            @Parameter(description = SEASON_DESCRIPTION) @RequestParam int season) {
-        return playerService.getSkaters(season);
+            @Parameter(description = SEASON_DESCRIPTION) @RequestParam int season,
+            @Parameter(description = LIMIT_DESCRIPTION)
+                    @RequestParam(required = false)
+                    @Min(1)
+                    @Max(MAX_LIMIT)
+                    Integer limit) {
+        return playerService.getSkaters(season, limit);
     }
 
-    @Operation(summary = "All goalies with eligible positions and a season's stats")
-    @ApiResponse(responseCode = "200", description = "Goalies returned")
+    @Operation(summary = "Goalies with eligible positions and a season's stats",
+            description = "The whole pool, or its winningest when `limit` is given.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Goalies returned"),
+            @ApiResponse(responseCode = "400", description = "limit is not between 1 and 500")
+    })
     @GetMapping("/goalies")
     public List<GoalieResponse> goalies(
-            @Parameter(description = SEASON_DESCRIPTION) @RequestParam int season) {
-        return playerService.getGoalies(season);
+            @Parameter(description = SEASON_DESCRIPTION) @RequestParam int season,
+            @Parameter(description = LIMIT_DESCRIPTION)
+                    @RequestParam(required = false)
+                    @Min(1)
+                    @Max(MAX_LIMIT)
+                    Integer limit) {
+        return playerService.getGoalies(season, limit);
     }
 
     @Operation(summary = "A player's headshot thumbnail",
