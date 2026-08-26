@@ -1,5 +1,6 @@
 package com.fantasy.yahoo.players;
 
+import com.fantasy.yahoo.players.dto.GoalieResponse;
 import com.fantasy.yahoo.players.dto.SkaterResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -95,6 +96,58 @@ class PlayerServiceTest {
         assertThat(skaters.get(1).headshot()).isNull();
     }
 
+    // A caller drawing five rows should be sent five, not the fifteen hundred it would have to
+    // rank itself to find them.
+    @Test
+    void withALimit_servesThatManyOfTheHighestScoring() {
+        when(skaterRepository.findAllByOrderByLastNameAscFirstNameAsc())
+                .thenReturn(List.of(skater(1), skater(2), skater(3)));
+        when(skaterSeasonRepository.findAllBySeason(2025)).thenReturn(List.of(
+                scored(1, 2025, 40), scored(2, 2025, 120), scored(3, 2025, 80)));
+
+        assertThat(playerService().getSkaters(2025, 2)).extracting(SkaterResponse::id)
+                .containsExactly(2L, 3L);
+    }
+
+    /**
+     * A player with no line for the season has no points at all — not zero, none — and either
+     * way belongs below everyone who scored. Left unhandled this is a NullPointerException on
+     * the sort rather than a player at the bottom of it.
+     */
+    @Test
+    void withALimit_sortsAPlayerWithNoLineLast() {
+        when(skaterRepository.findAllByOrderByLastNameAscFirstNameAsc())
+                .thenReturn(List.of(skater(1), skater(2)));
+        when(skaterSeasonRepository.findAllBySeason(2025)).thenReturn(List.of(scored(2, 2025, 10)));
+
+        assertThat(playerService().getSkaters(2025, 2)).extracting(SkaterResponse::id)
+                .containsExactly(2L, 1L);
+    }
+
+    // Without a limit nothing about the existing answer changes — the name order is what a
+    // caller ranking the whole pool has always received.
+    @Test
+    void withoutALimit_keepsServingThePoolInNameOrder() {
+        when(skaterRepository.findAllByOrderByLastNameAscFirstNameAsc())
+                .thenReturn(List.of(skater(1), skater(2), skater(3)));
+        when(skaterSeasonRepository.findAllBySeason(2025)).thenReturn(List.of(
+                scored(1, 2025, 40), scored(2, 2025, 120), scored(3, 2025, 80)));
+
+        assertThat(playerService().getSkaters(2025)).extracting(SkaterResponse::id)
+                .containsExactly(1L, 2L, 3L);
+    }
+
+    @Test
+    void goaliesWithALimit_serveThatManyOfTheWinningest() {
+        when(goalieRepository.findAllByOrderByLastNameAscFirstNameAsc())
+                .thenReturn(List.of(goalie(11), goalie(12), goalie(13)));
+        when(goalieSeasonRepository.findAllBySeason(2025)).thenReturn(List.of(
+                goalieLine(11, 2025, 12), goalieLine(12, 2025, 39), goalieLine(13, 2025, 30)));
+
+        assertThat(playerService().getGoalies(2025, 2)).extracting(GoalieResponse::id)
+                .containsExactly(12L, 13L);
+    }
+
     private static Skater skater(long id) {
         Skater skater = new Skater();
         skater.id = id;
@@ -106,6 +159,34 @@ class PlayerServiceTest {
         skater.headshot = "https://images.test/" + id + ".png";
         skater.syncedAt = Instant.parse("2026-08-16T04:00:00Z");
         return skater;
+    }
+
+    private static SkaterSeason scored(long playerId, int season, int points) {
+        SkaterSeason skaterSeason = line(playerId, season, 82, 0);
+        skaterSeason.points = points;
+        return skaterSeason;
+    }
+
+    private static Goalie goalie(long id) {
+        Goalie goalie = new Goalie();
+        goalie.id = id;
+        goalie.firstName = "Andrei";
+        goalie.lastName = "Vasilevskiy";
+        goalie.position = "G";
+        goalie.teamAbbrev = "TBL";
+        goalie.yahooPositions = "G";
+        goalie.syncedAt = Instant.parse("2026-08-16T04:00:00Z");
+        return goalie;
+    }
+
+    private static GoalieSeason goalieLine(long playerId, int season, int wins) {
+        GoalieSeason goalieSeason = new GoalieSeason();
+        goalieSeason.playerId = playerId;
+        goalieSeason.season = season;
+        goalieSeason.gamesPlayed = 58;
+        goalieSeason.wins = wins;
+        goalieSeason.syncedAt = Instant.parse("2026-08-16T04:00:00Z");
+        return goalieSeason;
     }
 
     private static SkaterSeason line(long playerId, int season, int gamesPlayed, int goals) {

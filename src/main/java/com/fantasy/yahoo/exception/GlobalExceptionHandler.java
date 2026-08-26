@@ -1,6 +1,7 @@
 package com.fantasy.yahoo.exception;
 
 import com.fantasy.yahoo.oauth.YahooNotConnectedException;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -22,6 +23,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorDto> handleBadRequest(IllegalArgumentException e) {
         // Expected client outcome (e.g. invalid OAuth state), not a server fault.
+        return build(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorDto> handleConstraintViolation(ConstraintViolationException e) {
+        // Bean Validation on a request parameter of a @Validated controller: the caller sent
+        // something out of range. An expected client outcome, so no stack trace.
         return build(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 
