@@ -86,8 +86,9 @@ public class PlayerController {
     }
 
     @Operation(summary = "A player's headshot thumbnail",
-            description = "The player's headshot scaled to a " + HeadshotThumbnailer.SIZE
-                    + "px square PNG. Refreshed by the sync, so the response is safe to cache "
+            description = "The player's headshot, scaled to " + HeadshotThumbnailer.HEIGHT
+                    + "px tall and otherwise as Yahoo frames it — the caller crops it to the "
+                    + "avatar it draws. Refreshed by the sync, so the response is safe to cache "
                     + "for a long time and is revalidated with an ETag.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Thumbnail returned"),
