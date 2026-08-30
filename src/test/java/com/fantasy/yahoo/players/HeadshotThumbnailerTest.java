@@ -17,28 +17,41 @@ class HeadshotThumbnailerTest {
 
     @Test
     void producesASquarePngAtTheThumbnailSize() throws IOException {
-        BufferedImage thumbnail = thumbnailOf(yahooShapedSource());
+        BufferedImage thumbnail = thumbnailOf(cutoutShapedSource());
 
         assertThat(thumbnail.getWidth()).isEqualTo(HeadshotThumbnailer.SIZE);
         assertThat(thumbnail.getHeight()).isEqualTo(HeadshotThumbnailer.SIZE);
     }
 
     /**
-     * Yahoo's cutouts are wide, and the table drew them with {@code object-fit: cover} — a centre
-     * crop. Cropping the same way here keeps every existing headshot framed as it was, rather
-     * than squashing in the margins the browser used to leave out.
+     * The point of the whole class. A centre crop of a 3:2 cutout keeps the full height, so the
+     * head — narrow, and centred near the top — comes out filling less than a third of the
+     * square. Framing on the head gives it appreciably more of the picture.
      */
     @Test
-    void cropsToTheCentreRatherThanSquashingTheMarginsIn() throws IOException {
-        BufferedImage thumbnail = thumbnailOf(yahooShapedSource());
+    void framesTheHeadRatherThanTheMiddleOfThePicture() throws IOException {
+        BufferedImage thumbnail = thumbnailOf(cutoutShapedSource());
 
-        assertThat(colourAtCentre(thumbnail)).isEqualTo(Color.GREEN);
-        assertThat(containsAnyRed(thumbnail)).isFalse();
+        assertThat(colourAtCentre(thumbnail)).isEqualTo(HEAD);
+        assertThat(shareOf(thumbnail, HEAD)).isGreaterThan(headShareOfACentreCrop());
+    }
+
+    /**
+     * The measurement reads the cutout's transparency. A source that has none — or one whose
+     * opaque part is too small to be a player — must not be cropped on whatever it happened to
+     * find; it falls back to the middle of the picture.
+     */
+    @Test
+    void fallsBackToTheCentreWhenThereIsNoCutoutToMeasure() throws IOException {
+        BufferedImage thumbnail = thumbnailOf(opaqueSource());
+
+        assertThat(colourAtCentre(thumbnail)).isEqualTo(HEAD);
+        assertThat(containsAny(thumbnail, MARGIN)).isFalse();
     }
 
     @Test
     void keepsTheCutoutTransparent() throws IOException {
-        BufferedImage thumbnail = thumbnailOf(yahooShapedSource());
+        BufferedImage thumbnail = thumbnailOf(cutoutShapedSource());
 
         assertThat(thumbnail.getColorModel().hasAlpha()).isTrue();
         assertThat(new Color(thumbnail.getRGB(0, 0), true).getAlpha()).isZero();
@@ -50,6 +63,16 @@ class HeadshotThumbnailerTest {
                 .isInstanceOf(IOException.class);
     }
 
+    private static final int WIDTH = 3504;
+    private static final int HEIGHT = 2336;
+    private static final int HEAD_LEFT = 1200;
+    private static final int HEAD_RIGHT = 2300;
+    private static final int HEAD_TOP = 40;
+    private static final int HEAD_BOTTOM = 1500;
+    private static final Color HEAD = Color.GREEN;
+    private static final Color SHOULDERS = Color.BLUE;
+    private static final Color MARGIN = Color.RED;
+
     private static BufferedImage thumbnailOf(byte[] source) throws IOException {
         return ImageIO.read(new ByteArrayInputStream(HeadshotThumbnailer.toThumbnail(source)));
     }
@@ -58,39 +81,77 @@ class HeadshotThumbnailerTest {
         return new Color(image.getRGB(image.getWidth() / 2, image.getHeight() / 2));
     }
 
-    private static boolean containsAnyRed(BufferedImage image) {
+    private static double shareOf(BufferedImage image, Color colour) {
+        int matched = 0;
         for (int x = 0; x < image.getWidth(); x++) {
             for (int y = 0; y < image.getHeight(); y++) {
-                Color colour = new Color(image.getRGB(x, y), true);
-                if (colour.getAlpha() > 0 && colour.getRed() > colour.getGreen()) {
-                    return true;
+                if (isNear(new Color(image.getRGB(x, y), true), colour)) {
+                    matched++;
                 }
             }
         }
-        return false;
+        return (double) matched / (image.getWidth() * image.getHeight());
+    }
+
+    private static boolean containsAny(BufferedImage image, Color colour) {
+        return shareOf(image, colour) > 0;
+    }
+
+    /** Scaling blends edges, so an exact match would count only the interior of each block. */
+    private static boolean isNear(Color actual, Color expected) {
+        return actual.getAlpha() > 0
+                && Math.abs(actual.getRed() - expected.getRed()) < 40
+                && Math.abs(actual.getGreen() - expected.getGreen()) < 40
+                && Math.abs(actual.getBlue() - expected.getBlue()) < 40;
     }
 
     /**
-     * A stand-in with the proportions and transparency of a real cutout: red only in the side
-     * margins a centre crop drops, an opaque green subject in the middle, and a transparent
-     * border around that subject.
+     * The head's share of the square a centre crop would take: the crop is as tall as the source
+     * and the head is neither as wide nor as tall as that, so it comes out under a third.
      */
-    private static byte[] yahooShapedSource() throws IOException {
-        int width = 3504;
-        int height = 2336;
-        int side = Math.min(width, height);
-        int left = (width - side) / 2;
-        int inset = side / 4;
+    private static double headShareOfACentreCrop() {
+        int side = Math.min(WIDTH, HEIGHT);
+        return (double) (HEAD_RIGHT - HEAD_LEFT) / side * (HEAD_BOTTOM - HEAD_TOP) / side;
+    }
 
-        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+    /**
+     * A stand-in with the proportions of a real cutout: transparent everywhere except a narrow
+     * head near the top and shoulders spreading across the bottom.
+     */
+    private static BufferedImage cutout() {
+        BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
-        graphics.setColor(Color.RED);
-        graphics.fillRect(0, 0, left, height);
-        graphics.fillRect(left + side, 0, width - left - side, height);
-        graphics.setColor(Color.GREEN);
-        graphics.fillRect(left + inset, inset, side - 2 * inset, side - 2 * inset);
+        graphics.setColor(HEAD);
+        graphics.fillRect(HEAD_LEFT, HEAD_TOP, HEAD_RIGHT - HEAD_LEFT, HEAD_BOTTOM - HEAD_TOP);
+        graphics.setColor(SHOULDERS);
+        graphics.fillRect(300, 1800, 2900, HEIGHT - 1800);
         graphics.dispose();
+        return image;
+    }
 
+    private static byte[] cutoutShapedSource() throws IOException {
+        return png(cutout());
+    }
+
+    /**
+     * The same proportions with nothing transparent to measure, and colour only in the side
+     * margins a centre crop drops — so a centre crop is visible in the result.
+     */
+    private static byte[] opaqueSource() throws IOException {
+        int side = Math.min(WIDTH, HEIGHT);
+        int left = (WIDTH - side) / 2;
+
+        BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = image.createGraphics();
+        graphics.setColor(MARGIN);
+        graphics.fillRect(0, 0, WIDTH, HEIGHT);
+        graphics.setColor(HEAD);
+        graphics.fillRect(left, 0, side, HEIGHT);
+        graphics.dispose();
+        return png(image);
+    }
+
+    private static byte[] png(BufferedImage image) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ImageIO.write(image, "png", out);
         return out.toByteArray();

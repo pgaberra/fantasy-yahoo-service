@@ -44,14 +44,14 @@ public class HeadshotSyncService {
     }
 
     public HeadshotRefreshResult refresh(Map<Long, String> sourceUrlsByPlayerId) {
-        Map<Long, String> stored = new HashMap<>();
+        Map<Long, HeadshotSource> stored = new HashMap<>();
         for (HeadshotSource source : headshotRepository.findAllSources()) {
-            stored.put(source.playerId(), source.sourceUrl());
+            stored.put(source.playerId(), source);
         }
 
         Map<Long, String> outdated = new HashMap<>();
         sourceUrlsByPlayerId.forEach((playerId, sourceUrl) -> {
-            if (!sourceUrl.equals(stored.get(playerId))) {
+            if (needsRendering(stored.get(playerId), sourceUrl)) {
                 outdated.put(playerId, sourceUrl);
             }
         });
@@ -64,6 +64,17 @@ public class HeadshotSyncService {
         log.info("Headshot refresh: {} of {} players refreshed, {} failed, {} removed",
                 refreshed, outdated.size(), outdated.size() - refreshed, departed.size());
         return new HeadshotRefreshResult(refreshed, outdated.size() - refreshed, departed.size());
+    }
+
+    /**
+     * A thumbnail is redrawn when there isn't one, when Yahoo has moved the source, or when the
+     * one we hold was rendered by an older recipe — the last of those is what carries a change to
+     * the framing out over a pool whose source URLs have not moved at all.
+     */
+    private static boolean needsRendering(HeadshotSource stored, String sourceUrl) {
+        return stored == null
+                || !sourceUrl.equals(stored.sourceUrl())
+                || !HeadshotThumbnailer.RECIPE.equals(stored.recipe());
     }
 
     private int download(Map<Long, String> sourceUrlsByPlayerId) {
@@ -112,6 +123,7 @@ public class HeadshotSyncService {
             PlayerHeadshot headshot = new PlayerHeadshot();
             headshot.playerId = playerId;
             headshot.sourceUrl = sourceUrl;
+            headshot.recipe = HeadshotThumbnailer.RECIPE;
             headshot.image = HeadshotThumbnailer.toThumbnail(fetch(sourceUrl));
             headshot.updatedAt = Instant.now();
             return headshot;
