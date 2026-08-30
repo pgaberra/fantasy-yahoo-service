@@ -116,9 +116,9 @@ class HeadshotSyncServiceTest {
 
     @Test
     void redrawsAThumbnailRenderedByAnOlderRecipe() {
-        // The framing changed but Yahoo's URL did not, so the source comparison alone would leave
-        // every player holding a picture cropped the old way for good.
-        givenStored(new HeadshotSource(9L, MCDAVID_IMAGE, "centre-64"));
+        // The rendering changed but Yahoo's URL did not, so the source comparison alone would leave
+        // every player holding a picture drawn the old way for good.
+        givenStored(new HeadshotSource(9L, MCDAVID_IMAGE, "head-64"));
         imageCdn.expect(requestTo(MCDAVID_IMAGE)).andRespond(withSuccess(png(), MediaType.IMAGE_PNG));
 
         HeadshotRefreshResult result = headshotSyncService.refresh(Map.of(9L, MCDAVID_IMAGE));
