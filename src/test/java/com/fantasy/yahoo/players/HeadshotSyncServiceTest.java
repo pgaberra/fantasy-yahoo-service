@@ -53,7 +53,7 @@ class HeadshotSyncServiceTest {
      */
     @Test
     void fetchesOnlyThePlayersWhoseSourceImageChanged() {
-        givenStored(new HeadshotSource(9L, MCDAVID_IMAGE));
+        givenStored(current(9L, MCDAVID_IMAGE));
         imageCdn.expect(requestTo(SHESTERKIN_IMAGE)).andRespond(withSuccess(png(), MediaType.IMAGE_PNG));
 
         HeadshotRefreshResult result = headshotSyncService.refresh(
@@ -79,7 +79,7 @@ class HeadshotSyncServiceTest {
 
     @Test
     void dropsTheHeadshotsOfPlayersWhoHaveLeftThePool() {
-        givenStored(new HeadshotSource(9L, MCDAVID_IMAGE), new HeadshotSource(101L, SHESTERKIN_IMAGE));
+        givenStored(current(9L, MCDAVID_IMAGE), current(101L, SHESTERKIN_IMAGE));
 
         HeadshotRefreshResult result = headshotSyncService.refresh(Map.of(9L, MCDAVID_IMAGE));
 
@@ -105,13 +105,34 @@ class HeadshotSyncServiceTest {
 
     @Test
     void doesNothingWhenEveryStoredHeadshotIsStillCurrent() {
-        givenStored(new HeadshotSource(9L, MCDAVID_IMAGE));
+        givenStored(current(9L, MCDAVID_IMAGE));
 
         HeadshotRefreshResult result = headshotSyncService.refresh(Map.of(9L, MCDAVID_IMAGE));
 
         imageCdn.verify();
         verify(headshotRepository, never()).saveAll(any());
         assertThat(result.refreshed()).isZero();
+    }
+
+    @Test
+    void redrawsAThumbnailRenderedByAnOlderRecipe() {
+        // The framing changed but Yahoo's URL did not, so the source comparison alone would leave
+        // every player holding a picture cropped the old way for good.
+        givenStored(new HeadshotSource(9L, MCDAVID_IMAGE, "centre-64"));
+        imageCdn.expect(requestTo(MCDAVID_IMAGE)).andRespond(withSuccess(png(), MediaType.IMAGE_PNG));
+
+        HeadshotRefreshResult result = headshotSyncService.refresh(Map.of(9L, MCDAVID_IMAGE));
+
+        imageCdn.verify();
+        assertThat(result.refreshed()).isEqualTo(1);
+        assertThat(savedHeadshots()).singleElement()
+                .satisfies(headshot -> assertThat(headshot.recipe)
+                        .isEqualTo(HeadshotThumbnailer.RECIPE));
+    }
+
+    /** A stored headshot drawn from that source by the recipe in force now. */
+    private static HeadshotSource current(long playerId, String sourceUrl) {
+        return new HeadshotSource(playerId, sourceUrl, HeadshotThumbnailer.RECIPE);
     }
 
     private void givenStored(HeadshotSource... sources) {

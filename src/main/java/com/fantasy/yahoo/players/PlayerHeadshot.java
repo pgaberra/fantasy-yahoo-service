@@ -19,6 +19,8 @@ public class PlayerHeadshot {
     @Id
     public Long playerId;
     public String sourceUrl;
+    /** The {@link HeadshotThumbnailer#RECIPE} this image was rendered by; null predates them. */
+    public String recipe;
     public byte[] image;
     public Instant updatedAt;
 }

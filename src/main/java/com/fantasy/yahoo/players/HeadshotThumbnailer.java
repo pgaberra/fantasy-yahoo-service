@@ -5,6 +5,7 @@ import javax.imageio.ImageReadParam;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
 import java.awt.Graphics2D;
+import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -13,13 +14,19 @@ import java.io.IOException;
 import java.util.Iterator;
 
 /**
- * Turns a full-resolution Yahoo cutout into the small square PNG the player table draws.
- * The square is a centre crop, which is what the browser's {@code object-fit: cover} did to
- * the source image before, so the thumbnail frames the player exactly as it always has.
+ * Turns a full-resolution Yahoo cutout into the small square PNG the player table draws,
+ * framed on the player's head.
  */
 public final class HeadshotThumbnailer {
 
     public static final int SIZE = 64;
+
+    /**
+     * How this thumbnail was rendered, stored beside it. A change to the framing or the size
+     * leaves every stored image stale while its source URL is untouched, so the sync has nothing
+     * to notice; comparing the recipe gives it something. Bump this whenever the output changes.
+     */
+    public static final String RECIPE = "head-64";
 
     /**
      * Decoding a source at full size is the expensive part — Yahoo's cutouts are around eight
@@ -28,6 +35,17 @@ public final class HeadshotThumbnailer {
      * detail than the thumbnail needs, so the scale below has something to average over.
      */
     private static final int MIN_DECODED_SIZE = SIZE * 4;
+
+    /** Fraction of the frame's height that holds head and neck and no shoulder. */
+    private static final double HEAD_BAND = 0.6;
+
+    /** How wide the square is relative to the head in it — a portrait's worth of air around it. */
+    private static final double FRAME_TO_HEAD = 1.85;
+
+    /** How much of the square sits above the hair. */
+    private static final double AIR_ABOVE_HAIR = 0.06;
+
+    private static final int OPAQUE_ENOUGH = 128;
 
     private HeadshotThumbnailer() {
     }
@@ -44,7 +62,7 @@ public final class HeadshotThumbnailer {
             ImageReader reader = readers.next();
             try {
                 reader.setInput(input);
-                return encodePng(scaleToSquare(centreCrop(decodeSubsampled(reader))));
+                return encodePng(scaleToSquare(crop(decodeSubsampled(reader))));
             } finally {
                 reader.dispose();
             }
@@ -59,9 +77,71 @@ public final class HeadshotThumbnailer {
         return reader.read(0, param);
     }
 
-    private static BufferedImage centreCrop(BufferedImage image) {
+    /**
+     * Yahoo's cutout is a 3:2 <em>landscape</em> frame of the upper body: the head sits centred
+     * and narrow near the top — about a third of the width — and the shoulders spread across the
+     * whole frame below it. A centre crop keeps the full height, which leaves the face filling
+     * barely half of the square avatar and reads as small and stretched.
+     *
+     * <p>The cutout's transparency says where the player is, so the head can be measured rather
+     * than assumed: everything in the top {@value #HEAD_BAND} of the frame is head and neck (the
+     * shoulders start well below that), so the opaque bounds of that band give the head's width
+     * and the top of the hair. Measuring also evens out the difference between a crew cut and a
+     * helmet of hair, which a fixed proportion would not.
+     *
+     * <p>A source with no transparency — or one whose head comes out implausibly small, which
+     * means the measurement found something other than a player — falls back to the centre crop.
+     */
+    private static BufferedImage crop(BufferedImage image) {
+        Rectangle head = headFrame(image);
+        Rectangle frame = head != null ? head : centreSquare(image);
+        return image.getSubimage(frame.x, frame.y, frame.width, frame.height);
+    }
+
+    private static Rectangle headFrame(BufferedImage image) {
+        if (!image.getColorModel().hasAlpha()) {
+            return null;
+        }
+        int width = image.getWidth();
+        int height = image.getHeight();
+        int band = (int) (height * HEAD_BAND);
+        int left = width;
+        int right = -1;
+        int top = -1;
+        for (int y = 0; y < band; y++) {
+            for (int x = 0; x < width; x++) {
+                if ((image.getRGB(x, y) >>> 24) < OPAQUE_ENOUGH) {
+                    continue;
+                }
+                if (top < 0) {
+                    top = y;
+                }
+                left = Math.min(left, x);
+                right = Math.max(right, x);
+            }
+        }
+        if (right < left) {
+            return null;
+        }
+        int shortestSide = Math.min(width, height);
+        int side = Math.min((int) ((right - left + 1) * FRAME_TO_HEAD), shortestSide);
+        if (side < shortestSide / 4) {
+            return null;
+        }
+        return new Rectangle(
+                clamp((left + right) / 2 - side / 2, width - side),
+                clamp(top - (int) (side * AIR_ABOVE_HAIR), height - side),
+                side,
+                side);
+    }
+
+    private static int clamp(int value, int max) {
+        return Math.max(0, Math.min(value, max));
+    }
+
+    private static Rectangle centreSquare(BufferedImage image) {
         int side = Math.min(image.getWidth(), image.getHeight());
-        return image.getSubimage(
+        return new Rectangle(
                 (image.getWidth() - side) / 2,
                 (image.getHeight() - side) / 2,
                 side,
