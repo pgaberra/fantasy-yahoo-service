@@ -30,17 +30,17 @@ public final class HeadshotThumbnailer {
 
     /**
      * How tall the stored picture is; the width follows from the source's own proportions. Three
-     * times the 64px avatar the BFF renders from it, which leaves it detail to scale down from
+     * times the 96px avatar the BFF renders from it, which leaves it detail to scale down from
      * after it crops, and matches what it asks ESPN for so both pools arrive in the same shape.
      */
-    public static final int HEIGHT = 192;
+    public static final int HEIGHT = 288;
 
     /**
      * How this thumbnail was rendered, stored beside it. A change to the shape or the size leaves
      * every stored image stale while its source URL is untouched, so the sync has nothing to
      * notice; comparing the recipe gives it something. Bump this whenever the output changes.
      */
-    public static final String RECIPE = "plain-192";
+    public static final String RECIPE = "plain-288";
 
     /**
      * Decoding a source at full size is the expensive part — Yahoo's cutouts are around eight
