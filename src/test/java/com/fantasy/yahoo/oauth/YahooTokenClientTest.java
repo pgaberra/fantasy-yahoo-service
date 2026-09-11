@@ -1,6 +1,7 @@
 package com.fantasy.yahoo.oauth;
 
 import com.fantasy.yahoo.config.YahooOAuthProperties;
+import com.fantasy.yahoo.exception.YahooUpstreamException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -12,6 +13,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 /**
  * The distinction under test is the one that decides whether a stored token is thrown away: a
@@ -57,8 +59,7 @@ class YahooTokenClientTest {
                         .contentType(MediaType.APPLICATION_JSON));
 
         assertThatThrownBy(() -> client.refresh("good-token"))
-                .isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(YahooGrantRejectedException.class);
+                .isInstanceOf(YahooUpstreamException.class);
     }
 
     @Test
@@ -69,7 +70,15 @@ class YahooTokenClientTest {
                         .contentType(MediaType.TEXT_HTML));
 
         assertThatThrownBy(() -> client.refresh("good-token"))
-                .isInstanceOf(IllegalStateException.class)
-                .isNotInstanceOf(YahooGrantRejectedException.class);
+                .isInstanceOf(YahooUpstreamException.class);
+    }
+
+    @Test
+    void exchangeCode_whenYahooAnswersWithUnreadableJson_isAnUpstreamFailure() {
+        server.expect(requestTo(containsString("/oauth2/get_token")))
+                .andRespond(withSuccess("not json", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.exchangeCode("the-code"))
+                .isInstanceOf(YahooUpstreamException.class);
     }
 }
