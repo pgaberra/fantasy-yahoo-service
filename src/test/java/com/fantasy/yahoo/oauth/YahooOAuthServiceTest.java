@@ -1,6 +1,7 @@
 package com.fantasy.yahoo.oauth;
 
 import com.fantasy.yahoo.config.YahooOAuthProperties;
+import com.fantasy.yahoo.exception.YahooUpstreamException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -125,10 +126,10 @@ class YahooOAuthServiceTest {
         YahooOAuthToken stored = expiredToken();
         when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.of(stored));
         when(cipher.decrypt("rt-enc")).thenReturn("rt");
-        when(tokenClient.refresh("rt")).thenThrow(new IllegalStateException("Yahoo token request failed"));
+        when(tokenClient.refresh("rt")).thenThrow(new YahooUpstreamException("Yahoo token request failed"));
 
         assertThatThrownBy(() -> service.validAccessToken("user-1"))
-                .isInstanceOf(IllegalStateException.class);
+                .isInstanceOf(YahooUpstreamException.class);
 
         verify(tokenRepository, never()).delete(any(YahooOAuthToken.class));
     }

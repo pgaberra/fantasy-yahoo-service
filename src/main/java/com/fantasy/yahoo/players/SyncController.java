@@ -10,8 +10,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,8 +24,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/sync")
 public class SyncController {
-
-    private static final Logger log = LoggerFactory.getLogger(SyncController.class);
 
     private final SyncService syncService;
     private final YahooProbeService probeService;
@@ -48,16 +44,9 @@ public class SyncController {
     })
     @PostMapping
     public ResponseEntity<SyncAcceptedResponse> triggerSync() {
-        if (syncService.isRunning()) {
+        if (!syncService.startAsync()) {
             return ResponseEntity.status(HttpStatus.CONFLICT).body(new SyncAcceptedResponse("running"));
         }
-        Thread.ofVirtual().name("player-sync").start(() -> {
-            try {
-                syncService.sync();
-            } catch (Exception e) {
-                log.error("Triggered player sync failed", e);
-            }
-        });
         return ResponseEntity.accepted().body(new SyncAcceptedResponse("accepted"));
     }
 

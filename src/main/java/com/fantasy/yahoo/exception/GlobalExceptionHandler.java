@@ -34,9 +34,13 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 
-    @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<ErrorDto> handleUpstreamFailure(IllegalStateException e) {
-        // Raised when the upstream Yahoo API call fails — a real failure, so log it.
+    /**
+     * Yahoo failed, and only that. A JDK exception is not enough to say so: this service throws
+     * {@link IllegalStateException} for its own faults too (a missing signing key, a token it cannot
+     * decrypt), and those fall through to the catch-all 500 rather than being blamed on Yahoo.
+     */
+    @ExceptionHandler(YahooUpstreamException.class)
+    public ResponseEntity<ErrorDto> handleUpstreamFailure(YahooUpstreamException e) {
         log.error("Upstream Yahoo API call failed", e);
         return build(HttpStatus.BAD_GATEWAY, e.getMessage());
     }

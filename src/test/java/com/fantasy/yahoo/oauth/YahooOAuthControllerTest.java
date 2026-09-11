@@ -1,6 +1,7 @@
 package com.fantasy.yahoo.oauth;
 
 import com.fantasy.yahoo.config.YahooOAuthProperties;
+import com.fantasy.yahoo.exception.YahooUpstreamException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -98,7 +99,7 @@ class YahooOAuthControllerTest {
      */
     @Test
     void callback_whenTheExchangeFails_saysSo() {
-        doThrow(new IllegalStateException("Yahoo token request failed: 400 Bad Request"))
+        doThrow(new YahooUpstreamException("Yahoo token request failed: 400 Bad Request"))
                 .when(oauthService).handleCallback("the-code", "the-state");
 
         ResponseEntity<Void> response = controller.callback("the-code", "the-state", null);

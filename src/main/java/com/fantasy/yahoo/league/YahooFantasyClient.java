@@ -1,5 +1,6 @@
 package com.fantasy.yahoo.league;
 
+import com.fantasy.yahoo.exception.YahooUpstreamException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -89,7 +90,7 @@ public class YahooFantasyClient {
     /**
      * Fetches a page of a game's players and reports what happened instead of throwing.
      *
-     * <p>Every other call here turns a Yahoo failure into an {@link IllegalStateException}, which
+     * <p>Every other call here turns a Yahoo failure into a {@link YahooUpstreamException}, which
      * is right when the caller needs the data — but useless when the failure *is* what you came
      * to look at. A 403 with Yahoo's own wording, against a game key and season you chose, is the
      * only thing that distinguishes "we are not allowed" from "that season is not there" from
@@ -158,16 +159,16 @@ public class YahooFantasyClient {
                     .retrieve()
                     .body(String.class);
         } catch (RestClientException e) {
-            throw new IllegalStateException(
+            throw new YahooUpstreamException(
                     "Yahoo Fantasy API call failed for " + uriTemplate + ": " + e.getMessage(), e);
         }
         if (body == null || body.isBlank()) {
-            throw new IllegalStateException("Yahoo Fantasy API returned an empty body for " + uriTemplate);
+            throw new YahooUpstreamException("Yahoo Fantasy API returned an empty body for " + uriTemplate);
         }
         try {
             return objectMapper.readTree(body);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Yahoo Fantasy API returned unparseable JSON for " + uriTemplate, e);
+            throw new YahooUpstreamException("Yahoo Fantasy API returned unparseable JSON for " + uriTemplate, e);
         }
     }
 }
