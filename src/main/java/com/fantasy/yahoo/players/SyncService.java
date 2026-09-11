@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -98,10 +99,42 @@ public class SyncService {
         return running.get();
     }
 
-    public SyncRun sync() {
+    /**
+     * Starts a sync on its own thread and returns as soon as it is under way.
+     *
+     * <p>The flag is claimed here, before the thread starts, so a caller told it started can rely
+     * on that, and a second caller in the same instant is refused rather than also told yes.
+     *
+     * @return whether this call is the one that started it; false when a sync is already running
+     */
+    public boolean startAsync() {
         if (!running.compareAndSet(false, true)) {
-            throw new IllegalStateException("A sync is already running");
+            return false;
         }
+        Thread.ofVirtual().name("player-sync").start(() -> {
+            try {
+                runClaimed();
+            } catch (Exception e) {
+                log.error("Triggered player sync failed", e);
+            }
+        });
+        return true;
+    }
+
+    /**
+     * Runs a sync and waits for it. For the scheduler, which has nobody to answer to.
+     *
+     * @return the recorded run, or empty when a sync was already running. That is an ordinary
+     *     outcome, not a fault: the run under way is doing the same work.
+     */
+    public Optional<SyncRun> sync() {
+        if (!running.compareAndSet(false, true)) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(runClaimed());
+    }
+
+    private SyncRun runClaimed() {
         Instant started = Instant.now();
         try {
             return runSync(started);

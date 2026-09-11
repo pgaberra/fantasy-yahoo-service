@@ -32,22 +32,23 @@ internal:
   api-key: ${INTERNAL_API_KEY:}
 
 # Yahoo OAuth 2.0 + Fantasy Sports API.
-# Secrets default to empty so the app still boots without them (the OAuth endpoints
-# just fail at call time); provide them via env vars, never in git. Non-secret URLs
-# and the scope carry defaults.
+# The four secrets have no default and are required in every environment, local included:
+# the app refuses to start when one is missing, blank, or (the encryption key) not 32 bytes,
+# rather than deploying healthy and failing at a user's first Yahoo connect. Provide them via
+# env vars, never in git; tests supply dummy values. Non-secret URLs and the scope carry defaults.
 yahoo:
   oauth:
-    client-id: ${YAHOO_CLIENT_ID:}
-    client-secret: ${YAHOO_CLIENT_SECRET:}
+    client-id: ${YAHOO_CLIENT_ID}
+    client-secret: ${YAHOO_CLIENT_SECRET}
     # The callback URL registered with the Yahoo app — must match exactly. Yahoo rejects
     # localhost and shared free-hosting domains, so each env needs a custom domain
     # (yahoo.slapstat.com / yahoo.staging.slapstat.com).
     redirect-uri: ${YAHOO_REDIRECT_URI:http://localhost:8088/api/v1/yahoo/oauth/callback}
     scope: ${YAHOO_SCOPE:fspt-r}
     # HMAC key for the short-lived OAuth state (carries the app user id).
-    state-secret: ${YAHOO_STATE_SECRET:}
+    state-secret: ${YAHOO_STATE_SECRET}
     # Base64 256-bit AES key for encrypting stored tokens (openssl rand -base64 32).
-    token-encryption-key: ${TOKEN_ENCRYPTION_KEY:}
+    token-encryption-key: ${TOKEN_ENCRYPTION_KEY}
     # Where the browser is redirected after a successful connect (the web app).
     web-post-connect-url: ${WEB_POST_CONNECT_URL:http://localhost:4200}
     login-base-url: ${YAHOO_LOGIN_BASE_URL:https://api.login.yahoo.com}

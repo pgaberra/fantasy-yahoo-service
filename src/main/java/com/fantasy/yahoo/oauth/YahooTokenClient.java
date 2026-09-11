@@ -1,6 +1,7 @@
 package com.fantasy.yahoo.oauth;
 
 import com.fantasy.yahoo.config.YahooOAuthProperties;
+import com.fantasy.yahoo.exception.YahooUpstreamException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -77,17 +78,17 @@ public class YahooTokenClient {
                 throw new YahooGrantRejectedException(
                         "Yahoo rejected the grant: " + e.getMessage(), e);
             }
-            throw new IllegalStateException("Yahoo token request failed: " + e.getMessage(), e);
+            throw new YahooUpstreamException("Yahoo token request failed: " + e.getMessage(), e);
         } catch (RestClientException e) {
-            throw new IllegalStateException("Yahoo token request failed: " + e.getMessage(), e);
+            throw new YahooUpstreamException("Yahoo token request failed: " + e.getMessage(), e);
         }
         if (body == null || body.isBlank()) {
-            throw new IllegalStateException("Yahoo token endpoint returned an empty body");
+            throw new YahooUpstreamException("Yahoo token endpoint returned an empty body");
         }
         try {
             return objectMapper.readValue(body, TokenResponse.class);
         } catch (Exception e) {
-            throw new IllegalStateException("Yahoo token endpoint returned unparseable JSON", e);
+            throw new YahooUpstreamException("Yahoo token endpoint returned unparseable JSON", e);
         }
     }
 

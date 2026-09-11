@@ -35,7 +35,9 @@ public class SyncScheduler {
             return;
         }
         try {
-            syncService.sync();
+            if (syncService.sync().isEmpty()) {
+                log.info("Scheduled player sync skipped: a triggered sync is already running");
+            }
         } catch (Exception e) {
             log.error("Scheduled player sync failed", e);
         }
