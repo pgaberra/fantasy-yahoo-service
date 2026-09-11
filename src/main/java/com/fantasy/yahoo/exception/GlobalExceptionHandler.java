@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -38,6 +39,17 @@ public class GlobalExceptionHandler {
         // Raised when the upstream Yahoo API call fails — a real failure, so log it.
         log.error("Upstream Yahoo API call failed", e);
         return build(HttpStatus.BAD_GATEWAY, e.getMessage());
+    }
+
+    /**
+     * A request for a path this service does not serve. Without this the catch-all turns it into a
+     * 500 with a full stack trace. The API-key filter answers an unauthenticated caller with 401
+     * before the dispatcher is reached, so what gets here is one of our own services asking for an
+     * endpoint the deployed build does not have: the version skew espn-service logged in production.
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorDto> handleNoResource(NoResourceFoundException e) {
+        return build(HttpStatus.NOT_FOUND, "No resource found for the requested path");
     }
 
     @ExceptionHandler(Exception.class)
