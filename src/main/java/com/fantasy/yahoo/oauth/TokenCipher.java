@@ -16,8 +16,8 @@ import java.util.Base64;
  * value supplied via {@code TOKEN_ENCRYPTION_KEY}; generate one with
  * {@code openssl rand -base64 32}. The stored value is base64(iv ‖ ciphertext+tag).
  *
- * The key is validated lazily (on first use), not at construction, so the app still
- * boots for tests/CI when the key is unset.
+ * The running service cannot start without a valid key: {@link YahooOAuthProperties} rejects a
+ * blank or wrong-length one at startup. The check on use stays for instances built by hand.
  */
 @Component
 public class TokenCipher {
