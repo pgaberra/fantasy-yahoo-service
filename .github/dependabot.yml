@@ -1,0 +1,39 @@
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      all-dependencies:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - major
+          - minor
+          - patch
+      all-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      all-actions:
+        patterns:
+          - "*"
+        update-types:
+          - major
+          - minor
+          - patch
