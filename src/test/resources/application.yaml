@@ -21,6 +21,16 @@ springdoc:
 internal:
   api-key: test-internal-key
 
+# The OAuth secrets are validated at startup and have no default, and these test resources
+# shadow application.yaml, so the context needs values here. None of them is a real credential;
+# the AES key is base64 of 32 zero bytes.
+yahoo:
+  oauth:
+    client-id: test-client-id
+    client-secret: test-client-secret
+    state-secret: test-state-secret
+    token-encryption-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+
 # The season a sync collects has no default in the app — a run has to know which season it is
 # writing, and guessing would file one season's numbers under another. These test resources
 # shadow application.yaml, so the value is set here rather than inherited.

@@ -24,7 +24,7 @@ later: BFF → GET /api/v1/yahoo/leagues / …/settings (uses the stored tokens)
 
 ## Tech stack
 
-- Java 25, Spring Boot 4.0.5, Gradle (wrapper: `./gradlew`)
+- Java 25, Spring Boot 4.1.1, Gradle 9.7.1 (wrapper: `./gradlew`); Dependabot proposes updates weekly
 - Spring WebMVC (virtual threads), Spring Data JPA, Bean Validation, Actuator
 - `RestClient` for Yahoo's OAuth + Fantasy API; JDK `Cipher` (AES-GCM) for token encryption
 - PostgreSQL (runtime), Flyway migrations
@@ -135,9 +135,12 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
 - `application.yaml`: datasource
   `jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:fantasy_yahoo}`,
   `ddl-auto: validate` (Flyway owns the schema), `server.port=${PORT:8088}`.
-- `yahoo.oauth.*` — OAuth config. **Secrets** (`client-id/secret`, `state-secret`,
-  `token-encryption-key`) default to empty so the app still boots for tests/CI; the OAuth
-  endpoints just fail at call time when unset. Non-secret URLs + `scope` carry defaults.
+- `yahoo.oauth.*` — OAuth config. **Secrets** (`YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET`,
+  `YAHOO_STATE_SECRET`, `TOKEN_ENCRYPTION_KEY`) have **no default** and are required in every
+  environment, local runs included: `YahooOAuthProperties` is `@Validated`, so the app
+  **refuses to start** when one is missing or blank, or when the key does not decode to 32
+  bytes. The test `application.yaml` carries non-secret dummy values. Non-secret URLs +
+  `scope` carry defaults.
 - **Yahoo redirect URI gotcha:** Yahoo rejects `localhost` and shared free-hosting domains
   as the callback domain. Each environment therefore needs a **custom domain**
   (`yahoo.slapstat.com` / `yahoo.staging.slapstat.com`); `YAHOO_REDIRECT_URI` must match the
