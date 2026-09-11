@@ -34,8 +34,8 @@ later: BFF → GET /api/v1/yahoo/leagues / …/settings (uses the stored tokens)
 ## Common commands
 
 ```bash
-docker compose up -d     # start Postgres (DB fantasy_yahoo, host port 5434)
-./gradlew build          # compile + test (CI: ./gradlew build --no-daemon)
+docker compose up -d     # start Postgres 16 (DB fantasy_yahoo, host port 5434)
+./gradlew build          # compile + test + SpotBugs/FindSecBugs, fails on any finding (CI: ./gradlew build jacocoTestReport --no-daemon)
 ./gradlew test           # tests only (H2, no Postgres needed)
 ./gradlew bootRun        # run locally (requires Postgres via docker compose above)
 ```
@@ -48,11 +48,19 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   - `YahooOAuthToken` / `YahooOAuthTokenRepository` — JPA entity (`yahoo_oauth_tokens`),
     keyed by `app_user_id`; tokens stored as AES-GCM ciphertext.
   - `TokenCipher` — AES-GCM encrypt/decrypt (`TOKEN_ENCRYPTION_KEY`, base64 256-bit).
-  - `OAuthStateCodec` — HMAC-signed, short-lived `state` carrying the app user id
-    (`YAHOO_STATE_SECRET`); CSRF protection without a server-side state table.
-  - `YahooTokenClient` — calls Yahoo's `/oauth2/get_token` (code exchange + refresh).
-  - `YahooOAuthService` — builds the authorize URL, handles the callback (verify→exchange
-    →store), and hands out a valid access token (refreshing transparently).
+  - `OAuthStateCodec` — HMAC-signed, 10-minute `state` carrying the app user id and a random
+    nonce (`YAHOO_STATE_SECRET`). The signature stops a forged state; the nonce is what makes
+    it single-use (next line).
+  - `PendingOAuthState` / `PendingOAuthStateRepository` — JPA entity
+    (`yahoo_oauth_pending_states`, V5): every authorize-url call stores its nonce, the callback
+    **consumes** it, and an hourly job (`yahoo.oauth.pending-state-purge-cron`, default
+    `0 20 * * * *`) purges expired rows. This table is the replay protection; the signature
+    alone would let a captured state be reused until it expired. Do not treat it as unused.
+  - `YahooTokenClient` — calls Yahoo's `/oauth2/get_token` (code exchange + refresh); throws
+    `YahooGrantRejectedException` for Yahoo's `invalid_grant` (the stored token is dropped,
+    re-consent is the only fix) and `YahooUpstreamException` for any other Yahoo failure.
+  - `YahooOAuthService` — builds the authorize URL, handles the callback (verify→consume
+    nonce→exchange→store), and hands out a valid access token (refreshing transparently).
   - `YahooOAuthController` — `/api/v1/yahoo/oauth/{authorize-url,callback,connection}`.
   - `dto/` — `AuthorizeUrlResponse`, `ConnectionResponse`.
 - `league/` — fantasy league data:
@@ -67,9 +75,21 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
 - `config/` — `OpenApiConfig` (pins server URL to `/`), `YahooOAuthProperties`
   (`@ConfigurationProperties("yahoo.oauth")`), `YahooRestClientConfig` (login + API
   `RestClient`s), `InternalApiKeyFilter` (API-key auth; exempts the callback).
-- `exception/` — `YahooNotConnectedException`, `ErrorDto`, `GlobalExceptionHandler`.
-- `players/` — the cached player read model and the job that refreshes it from Yahoo. The
-  model is split along the line the data itself splits on:
+- `exception/` — `ErrorDto`, `GlobalExceptionHandler`, `YahooUpstreamException` (thrown only by
+  `YahooFantasyClient` / `YahooTokenClient`, and the only exception answered with 502; any other
+  unexpected exception, `IllegalStateException` included, is the catch-all 500).
+  `YahooNotConnectedException` (404) lives in `oauth/`.
+- `player/` — live reads of Yahoo's player collections (not the cache), used by the sync:
+  - `YahooPlayerService` — pages a game's or a league's player collection (25 per page) with the
+    service account's token and parses each player's identity, headshot, eligible positions and
+    season stat line.
+  - `YahooPlayerController` — `GET /api/v1/yahoo/players` (the game-wide collection, kept for
+    diagnosis; Yahoo refuses it today).
+  - `dto/` — `YahooPlayerResponse`, `YahooSkaterStats`, `YahooGoalieStats`.
+- `players/` — the cached player read model (served by `PlayerController`:
+  `GET /api/v1/players/{skaters,goalies}?season=` and `…/{playerId}/headshot`) and the job that
+  refreshes it from Yahoo (`SyncService`, `SyncScheduler`, `SyncController` at
+  `/api/v1/sync`). The model is split along the line the data itself splits on:
   - `skaters` / `goalies` — **who is in the league now**: identity, team, sweater number,
     eligible positions, headshot. Turns over between seasons.
   - `skater_seasons` / `goalie_seasons` — **one stat line per player and season**, keyed by
@@ -122,8 +142,8 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   as the callback domain. Each environment therefore needs a **custom domain**
   (`yahoo.slapstat.com` / `yahoo.staging.slapstat.com`); `YAHOO_REDIRECT_URI` must match the
   value registered with the Yahoo app exactly.
-- Migrations live in `src/main/resources/db/migration/` (`V1`). **Schema changes = a new
-  `V__` migration**, never edit an applied one.
+- Migrations live in `src/main/resources/db/migration/` (`V1__…` onward). **Schema changes = a
+  new `V__` migration**, never edit an applied one.
 - Tests use H2 in PostgreSQL mode, `ddl-auto: create-drop`, Flyway disabled.
 
 ## Conventions
@@ -155,7 +175,16 @@ git add specs/openapi.yaml
 
 ## CI / workflow
 
-- `.github/workflows/pr-checks.yml`: `./gradlew build --no-daemon` on PRs to `master`.
+- `.github/workflows/pr-checks.yml`: `./gradlew build jacocoTestReport --no-daemon` (tests +
+  SpotBugs/FindSecBugs + coverage comment) on PRs to `master`. Not on push to `master`.
+- `.github/workflows/tag-on-merge.yml` (push to `master`): tags a SemVer version from the squash
+  commit's Conventional-Commit title, creates a **draft** GitHub Release, and stamps + redeploys
+  **staging**. So **every merge deploys to staging**.
+- `.github/workflows/promote-to-prod.yml` (a release is **published**, or manually with a
+  `version`): deploys that tag to **production** and verifies the version production reports;
+  a failure opens a `prod-promotion-failed` issue. A merge never reaches prod on its own.
+- `.github/workflows/qodana.yml` (weekly cron, Mondays 06:00 UTC, plus manual): report-only
+  Qodana scan; never fails.
 - `@claude` mentions on issues/PRs trigger `.github/workflows/claude.yml`.
 
 ## Monorepo conventions

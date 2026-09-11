@@ -1,6 +1,7 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    # Same major version as the Coolify databases in staging and prod.
+    image: postgres:16-alpine
     environment:
       POSTGRES_DB: fantasy_yahoo
       POSTGRES_USER: fantasy
