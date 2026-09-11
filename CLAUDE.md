@@ -37,7 +37,7 @@ later: BFF → GET /api/v1/yahoo/leagues / …/settings (uses the stored tokens)
 docker compose up -d     # start Postgres 16 (DB fantasy_yahoo, host port 5434)
 ./gradlew build          # compile + test + SpotBugs/FindSecBugs, fails on any finding (CI: ./gradlew build jacocoTestReport --no-daemon)
 ./gradlew test           # tests only (H2, no Postgres needed)
-./gradlew bootRun        # run locally (requires Postgres via docker compose above)
+./gradlew bootRun        # run locally: Postgres via docker compose above, plus INTERNAL_API_KEY and the four OAuth secrets (see Database & config)
 ```
 
 Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
