@@ -1,12 +1,16 @@
 package com.fantasy.yahoo.league;
 
+import com.fantasy.yahoo.exception.YahooUpstreamException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -55,5 +59,23 @@ class YahooFantasyClientTest {
         client.getLeagueTeams("tok", "453.l.1/../secret");
 
         server.verify();
+    }
+
+    @Test
+    void aYahooErrorStatus_isAnUpstreamFailure() {
+        server.expect(requestTo(containsString("/league/453.l.123/settings")))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN));
+
+        assertThatThrownBy(() -> client.getLeagueSettings("tok", "453.l.123"))
+                .isInstanceOf(YahooUpstreamException.class);
+    }
+
+    @Test
+    void anEmptyBody_isAnUpstreamFailure() {
+        server.expect(requestTo(containsString("/league/453.l.123/settings")))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.getLeagueSettings("tok", "453.l.123"))
+                .isInstanceOf(YahooUpstreamException.class);
     }
 }
