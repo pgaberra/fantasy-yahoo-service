@@ -24,7 +24,7 @@ later: BFF → GET /api/v1/yahoo/leagues / …/settings (uses the stored tokens)
 
 ## Tech stack
 
-- Java 25, Spring Boot 4.0.5, Gradle (wrapper: `./gradlew`)
+- Java 25, Spring Boot 4.1.1, Gradle 9.7.1 (wrapper: `./gradlew`); Dependabot proposes updates weekly
 - Spring WebMVC (virtual threads), Spring Data JPA, Bean Validation, Actuator
 - `RestClient` for Yahoo's OAuth + Fantasy API; JDK `Cipher` (AES-GCM) for token encryption
 - PostgreSQL (runtime), Flyway migrations
