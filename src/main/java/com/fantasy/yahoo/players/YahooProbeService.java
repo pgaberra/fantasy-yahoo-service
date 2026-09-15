@@ -94,20 +94,8 @@ public class YahooProbeService {
      * text when it is shaped differently.
      */
     private static String describe(Attempt attempt) {
-        String described = descriptionOf(attempt.body());
+        String described = YahooFantasyClient.errorDescription(attempt.body());
         return described != null ? described : attempt.error();
-    }
-
-    private static String descriptionOf(String body) {
-        if (body == null || body.isBlank()) {
-            return null;
-        }
-        try {
-            JsonNode description = MAPPER.readTree(body).path("error").path("description");
-            return description.isTextual() ? description.asText() : null;
-        } catch (Exception e) {
-            return null;
-        }
     }
 
     /** Null when the body is not a player page at all, which is a different answer from zero. */

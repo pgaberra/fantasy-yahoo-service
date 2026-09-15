@@ -34,6 +34,16 @@ class GlobalExceptionHandlerUpstreamTest {
                 .andExpect(jsonPath("$.message").value("Yahoo Fantasy API call failed"));
     }
 
+    /** A refusal is a verdict, not an outage: it must not reach the BFF looking like one. */
+    @Test
+    void yahooRefusing_isAForbiddenWithYahoosWording() throws Exception {
+        mockMvc.perform(get("/test/refused"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.message").value(
+                        "Yahoo refused the request: This application is not authorized to perform this action."));
+    }
+
     @Test
     void aLocalFault_isAnInternalError_notBlamedOnYahoo() throws Exception {
         mockMvc.perform(get("/test/local"))
@@ -48,6 +58,13 @@ class GlobalExceptionHandlerUpstreamTest {
         @GetMapping("/test/upstream")
         String upstream() {
             throw new YahooUpstreamException("Yahoo Fantasy API call failed");
+        }
+
+        @GetMapping("/test/refused")
+        String refused() {
+            throw new YahooAccessDeniedException(
+                    "Yahoo refused the request: This application is not authorized to perform this action.",
+                    null);
         }
 
         @GetMapping("/test/local")

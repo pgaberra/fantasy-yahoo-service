@@ -1,5 +1,6 @@
 package com.fantasy.yahoo.players;
 
+import com.fantasy.yahoo.exception.ErrorDto;
 import com.fantasy.yahoo.players.dto.SyncAcceptedResponse;
 import com.fantasy.yahoo.players.dto.SyncRunResponse;
 import com.fantasy.yahoo.players.dto.YahooProbeResponse;
@@ -7,6 +8,8 @@ import com.fantasy.yahoo.league.YahooLeagueService;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
 import com.fantasy.yahoo.oauth.YahooOAuthService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -82,7 +85,12 @@ public class SyncController {
                     + "and it is itself a test — if this succeeds while a game's player "
                     + "collection is refused, the account and its permission are fine and the "
                     + "refusal is about what was asked for, not who asked.")
-    @ApiResponse(responseCode = "200", description = "Leagues returned")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Leagues returned"),
+            @ApiResponse(responseCode = "403",
+                    description = "Yahoo refused the request; the message carries Yahoo's own wording",
+                    content = @Content(schema = @Schema(implementation = ErrorDto.class)))
+    })
     @GetMapping("/leagues")
     public LeaguesResponse serviceAccountLeagues() {
         return leagueService.leagues(YahooOAuthService.SERVICE_ACCOUNT_ID);
