@@ -9,6 +9,13 @@ RUN chmod +x gradlew
 COPY src ./src
 RUN ./gradlew bootJar --no-daemon
 
+# Unpack the boot jar so the runtime loads classes from plain jars on the classpath. Run as a
+# nested jar, class loading goes through a lock in Spring Boot's NestedJarFile, and on staging's
+# two cores that deadlocked both virtual-thread carriers of the BFF, which runs the same way:
+# it stopped answering everything, its health check included (2026-09-11).
+RUN cp build/libs/*.jar app.jar \
+    && java -Djarmode=tools -jar app.jar extract --destination extracted
+
 # ---- Runtime stage ----
 FROM eclipse-temurin:25-jre
 
@@ -20,7 +27,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=build /app/build/libs/*.jar app.jar
+COPY --from=build /app/extracted/ ./
 
 EXPOSE 8088
 ENTRYPOINT ["java", "-jar", "app.jar"]

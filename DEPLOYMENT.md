@@ -1,9 +1,10 @@
 # Deployment — fantasy-yahoo-service
 
 Deployed via **Coolify** (self-hosted on Hetzner) as a **Docker service** plus its own
-dedicated **PostgreSQL** database (separate from the other services'). Unlike db-service /
-nhl-service, this service needs a **public domain** — Yahoo's OAuth callback is hit by the
-user's browser — *and* an internal alias `yahoo-service:8088` the BFF calls.
+dedicated **PostgreSQL** database (separate from the other services'). Unlike the other
+internal services (db-service, espn-service), this service needs a **public domain** — Yahoo's
+OAuth callback is hit by the user's browser — *and* an internal alias `yahoo-service:8088` the
+BFF calls.
 
 | Environment | Public domain (OAuth callback) | Web (`WEB_POST_CONNECT_URL`) |
 |---|---|---|
@@ -15,8 +16,9 @@ user's browser — *and* an internal alias `yahoo-service:8088` the BFF calls.
 | Aspect | Value |
 |---|---|
 | Build | `Dockerfile` — JDK 25 builds the boot jar, JRE 25 runs it |
-| Database | Dedicated Coolify PostgreSQL (`postgres:16-alpine`), same Docker network |
-| Schema | Flyway migration (`V1`) runs automatically on startup (`ddl-auto: validate`) |
+| Database | Dedicated Coolify PostgreSQL, **`postgres:16-alpine`** in both staging and prod (checked on the servers 2026-09-11; `docker-compose.yml` matches), same Docker network |
+| Schema | Flyway migrations (`V1__…` onward) run automatically on startup (`ddl-auto: validate`) |
+| Deploys | A merge to `master` deploys **staging** (`tag-on-merge.yml`); **publishing** the draft release deploys **production** (`promote-to-prod.yml`) |
 | Port | `${PORT}` (defaults to 8088); internal alias `yahoo-service:8088` for the BFF |
 | Public domain | `yahoo.slapstat.com` / `yahoo.staging.slapstat.com` (Coolify Let's Encrypt; Cloudflare DNS-only) |
 | Health check | `GET /actuator/health` |
@@ -50,6 +52,13 @@ If a Yahoo app allows only one redirect URI, use one app per environment.
 | `YAHOO_SCOPE` | optional; defaults to `fspt-r` (Fantasy read) |
 
 All secrets are **environment-specific** — staging and prod never share keys.
+
+`YAHOO_CLIENT_ID`, `YAHOO_CLIENT_SECRET`, `YAHOO_STATE_SECRET` and `TOKEN_ENCRYPTION_KEY` have
+**no default**: the service **refuses to start** when one is missing or blank, or when
+`TOKEN_ENCRYPTION_KEY` does not decode to 32 bytes. A missing one therefore shows up as a failed
+deploy (Coolify keeps the old container), not as a healthy service that breaks at a user's first
+Yahoo connect. Changing `TOKEN_ENCRYPTION_KEY` makes every stored token undecryptable, so users
+would have to reconnect.
 
 ## First-time setup (per environment)
 
