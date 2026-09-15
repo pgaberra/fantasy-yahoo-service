@@ -46,6 +46,18 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Yahoo refused, which is a verdict rather than an outage, so it is relayed as the 403 it was.
+     * WARN, not ERROR: a user whose own Yahoo account is refused is not a fault here, and a lost
+     * app permission is still caught at ERROR by the nightly sync, which records the refusal as a
+     * failed run.
+     */
+    @ExceptionHandler(YahooAccessDeniedException.class)
+    public ResponseEntity<ErrorDto> handleAccessDenied(YahooAccessDeniedException e) {
+        log.warn("Yahoo refused a request: {}", e.getMessage().replace("\r", "_").replace("\n", "_"));
+        return build(HttpStatus.FORBIDDEN, e.getMessage());
+    }
+
+    /**
      * A request for a path this service does not serve. Without this the catch-all turns it into a
      * 500 with a full stack trace. The API-key filter answers an unauthenticated caller with 401
      * before the dispatcher is reached, so what gets here is one of our own services asking for an

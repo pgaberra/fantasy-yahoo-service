@@ -1,5 +1,6 @@
 package com.fantasy.yahoo.league;
 
+import com.fantasy.yahoo.exception.YahooAccessDeniedException;
 import com.fantasy.yahoo.exception.YahooUpstreamException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -64,10 +65,35 @@ class YahooFantasyClientTest {
     @Test
     void aYahooErrorStatus_isAnUpstreamFailure() {
         server.expect(requestTo(containsString("/league/453.l.123/settings")))
-                .andRespond(withStatus(HttpStatus.FORBIDDEN));
+                .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));
 
         assertThatThrownBy(() -> client.getLeagueSettings("tok", "453.l.123"))
                 .isInstanceOf(YahooUpstreamException.class);
+    }
+
+    /** What Yahoo answered, verbatim, every call from 2026-08-26 until it restored the app. */
+    @Test
+    void aForbidden_isARefusalCarryingYahoosOwnWording() {
+        server.expect(requestTo(containsString("/users;use_login=1/games;game_keys=nhl/leagues")))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN).contentType(MediaType.APPLICATION_JSON).body("""
+                        {"error": {"xml:lang": "en-us",
+                          "description": "This application is not authorized to perform this action.",
+                          "detail": ""}}"""));
+
+        assertThatThrownBy(() -> client.getUserNhlLeagues("tok"))
+                .isInstanceOf(YahooAccessDeniedException.class)
+                .hasMessage("Yahoo refused the request: "
+                        + "This application is not authorized to perform this action.");
+    }
+
+    @Test
+    void aForbiddenWithoutYahoosErrorShape_isStillARefusal() {
+        server.expect(requestTo(containsString("/league/453.l.123/teams")))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN).body("<html>nope</html>"));
+
+        assertThatThrownBy(() -> client.getLeagueTeams("tok", "453.l.123"))
+                .isInstanceOf(YahooAccessDeniedException.class)
+                .hasMessage("Yahoo refused the request");
     }
 
     @Test

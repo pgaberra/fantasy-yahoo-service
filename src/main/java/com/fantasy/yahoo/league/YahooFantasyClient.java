@@ -1,11 +1,13 @@
 package com.fantasy.yahoo.league;
 
+import com.fantasy.yahoo.exception.YahooAccessDeniedException;
 import com.fantasy.yahoo.exception.YahooUpstreamException;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
@@ -139,6 +141,25 @@ public class YahooFantasyClient {
         }
     }
 
+    /**
+     * The sentence in a Yahoo error body's {@code error.description} — "This application is not
+     * authorized to perform this action" and the like — on one line, or null when the body is
+     * shaped differently.
+     */
+    public static String errorDescription(String body) {
+        if (body == null || body.isBlank()) {
+            return null;
+        }
+        try {
+            JsonNode description = new ObjectMapper().readTree(body).path("error").path("description");
+            return description.isTextual() && !description.asText().isBlank()
+                    ? description.asText().replace("\r", " ").replace("\n", " ")
+                    : null;
+        } catch (JsonProcessingException e) {
+            return null;
+        }
+    }
+
     private static String leaguePlayersPath(String leagueKey) {
         return "/league/" + leagueKey + "/players;start=0;count=25/stats;type=season?format=json";
     }
@@ -158,6 +179,11 @@ public class YahooFantasyClient {
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                     .retrieve()
                     .body(String.class);
+        } catch (HttpClientErrorException.Forbidden e) {
+            String description = errorDescription(e.getResponseBodyAsString());
+            throw new YahooAccessDeniedException(description != null
+                    ? "Yahoo refused the request: " + description
+                    : "Yahoo refused the request", e);
         } catch (RestClientException e) {
             throw new YahooUpstreamException(
                     "Yahoo Fantasy API call failed for " + uriTemplate + ": " + e.getMessage(), e);
