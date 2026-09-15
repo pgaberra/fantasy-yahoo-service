@@ -188,7 +188,6 @@ git add specs/openapi.yaml
   a failure opens a `prod-promotion-failed` issue. A merge never reaches prod on its own.
 - `.github/workflows/qodana.yml` (weekly cron, Mondays 06:00 UTC, plus manual): report-only
   Qodana scan; never fails.
-- `@claude` mentions on issues/PRs trigger `.github/workflows/claude.yml`.
 
 ## Monorepo conventions
 
