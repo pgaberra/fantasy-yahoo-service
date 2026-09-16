@@ -145,6 +145,34 @@ class YahooOAuthServiceTest {
         verify(tokenRepository, never()).delete(any(YahooOAuthToken.class));
     }
 
+    @Test
+    void validAccessToken_whenTheStoredAccessTokenCannotBeDecrypted_reportsNotConnectedAndKeepsTheRow() {
+        YahooOAuthToken stored = expiredToken();
+        stored.setAccessExpiresAt(Instant.now().plus(1, ChronoUnit.HOURS));
+        when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.of(stored));
+        when(cipher.decrypt("at-enc")).thenThrow(
+                new UnreadableTokenException("Failed to decrypt token", new RuntimeException()));
+
+        assertThatThrownBy(() -> service.validAccessToken("user-1"))
+                .isInstanceOf(YahooNotConnectedException.class);
+
+        verify(tokenRepository, never()).delete(any(YahooOAuthToken.class));
+    }
+
+    @Test
+    void validAccessToken_whenTheStoredRefreshTokenCannotBeDecrypted_reportsNotConnectedWithoutCallingYahoo() {
+        YahooOAuthToken stored = expiredToken();
+        when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.of(stored));
+        when(cipher.decrypt("rt-enc")).thenThrow(
+                new UnreadableTokenException("Failed to decrypt token", new RuntimeException()));
+
+        assertThatThrownBy(() -> service.validAccessToken("user-1"))
+                .isInstanceOf(YahooNotConnectedException.class);
+
+        verify(tokenClient, never()).refresh(any());
+        verify(tokenRepository, never()).delete(any(YahooOAuthToken.class));
+    }
+
     /** A stored token whose access token has expired, so using it forces a refresh. */
     private static YahooOAuthToken expiredToken() {
         YahooOAuthToken token = new YahooOAuthToken();

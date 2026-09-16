@@ -39,4 +39,21 @@ class TokenCipherTest {
         assertThatThrownBy(() -> cipher("").encrypt("x"))
                 .isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void decrypt_underADifferentKey_isReportedAsUnreadable() {
+        // What a rotated TOKEN_ENCRYPTION_KEY does to every row written before the rotation.
+        String otherKey = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=";
+        String encrypted = cipher(otherKey).encrypt("ya29.some-yahoo-access-token");
+
+        assertThatThrownBy(() -> cipher(KEY).decrypt(encrypted))
+                .isInstanceOf(UnreadableTokenException.class);
+    }
+
+    @Test
+    void decrypt_withoutKey_isAConfigurationFault_notAnUnreadableToken() {
+        assertThatThrownBy(() -> cipher("").decrypt("anything"))
+                .isInstanceOf(IllegalStateException.class)
+                .isNotInstanceOf(UnreadableTokenException.class);
+    }
 }
