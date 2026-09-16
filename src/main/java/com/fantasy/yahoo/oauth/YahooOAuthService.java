@@ -8,7 +8,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.Base64;
+import java.util.HexFormat;
 import java.util.UUID;
 
 /**
@@ -16,7 +22,11 @@ import java.util.UUID;
  *
  * connect: build the Yahoo consent URL with a signed `state` carrying the app user id and a
  *          single-use nonce recorded server-side.
- * callback: verify state, consume the nonce, exchange the code for tokens, store them encrypted.
+ * callback: verify state, consume the nonce, exchange the code for tokens and park them, encrypted,
+ *           under a one-time link code for the browser to carry back to the web app.
+ * complete: attach the parked tokens, but only for the app user who started the flow. The state
+ *           proves which user started it, not whose browser finished it, so without this step a
+ *           consent link sent to someone else would store their Yahoo account under the sender's.
  * access: hand out a valid access token, refreshing it transparently when expired.
  */
 @Service
@@ -34,25 +44,32 @@ public class YahooOAuthService {
     // Refresh a little before the token actually expires to avoid races near the boundary.
     private static final long EXPIRY_SKEW_SECONDS = 60;
 
+    private static final long LINK_CODE_TTL_SECONDS = 300;
+    private static final int LINK_CODE_BYTES = 32;
+    private static final SecureRandom RANDOM = new SecureRandom();
+
     private final YahooOAuthProperties props;
     private final OAuthStateCodec stateCodec;
     private final YahooTokenClient tokenClient;
     private final TokenCipher cipher;
     private final YahooOAuthTokenRepository repository;
     private final PendingOAuthStateRepository pendingStateRepository;
+    private final PendingYahooLinkRepository pendingLinkRepository;
 
     public YahooOAuthService(YahooOAuthProperties props,
                              OAuthStateCodec stateCodec,
                              YahooTokenClient tokenClient,
                              TokenCipher cipher,
                              YahooOAuthTokenRepository repository,
-                             PendingOAuthStateRepository pendingStateRepository) {
+                             PendingOAuthStateRepository pendingStateRepository,
+                             PendingYahooLinkRepository pendingLinkRepository) {
         this.props = props;
         this.stateCodec = stateCodec;
         this.tokenClient = tokenClient;
         this.cipher = cipher;
         this.repository = repository;
         this.pendingStateRepository = pendingStateRepository;
+        this.pendingLinkRepository = pendingLinkRepository;
     }
 
     /** The Yahoo consent URL the browser should be sent to, for the given app user. */
@@ -74,9 +91,16 @@ public class YahooOAuthService {
                 .toUriString();
     }
 
-    /** Handles the Yahoo callback: verifies + consumes the state, exchanges the code, stores tokens. */
+    /** A parked Yahoo connection: the one-time code to hand to the browser, and who it is for. */
+    public record PendingLink(String linkCode, boolean serviceAccount) {
+    }
+
+    /**
+     * Handles the Yahoo callback: verifies + consumes the state, exchanges the code, and parks the
+     * tokens under a one-time link code. Nothing is attached to an account here.
+     */
     @Transactional
-    public void handleCallback(String code, String state) {
+    public PendingLink handleCallback(String code, String state) {
         Instant now = Instant.now();
         OAuthStateCodec.VerifiedState verified = stateCodec.decodeAndVerify(state, now);
         // Single-use: the nonce must match a pending authorization this service issued. Consuming
@@ -89,14 +113,78 @@ public class YahooOAuthService {
             throw new IllegalArgumentException("OAuth state does not match its pending authorization");
         }
         YahooTokenClient.TokenResponse tokens = tokenClient.exchangeCode(code);
-        upsert(verified.appUserId(), tokens, now);
+        String linkCode = newLinkCode();
+        String refresh = tokens.refreshToken() == null || tokens.refreshToken().isBlank()
+                ? null : cipher.encrypt(tokens.refreshToken());
+        pendingLinkRepository.save(new PendingYahooLink(
+                hash(linkCode), verified.appUserId(), tokens.xoauthYahooGuid(),
+                cipher.encrypt(tokens.accessToken()), refresh, tokens.expiresAt(now),
+                now.plusSeconds(LINK_CODE_TTL_SECONDS), now));
+        return new PendingLink(linkCode, SERVICE_ACCOUNT_ID.equals(verified.appUserId()));
     }
 
-    /** Drops pending states whose TTL has passed so the table stays small. */
+    /**
+     * Attaches a parked connection to {@code appUserId}, if that is the user who started the flow.
+     * The code is spent whatever the outcome, and a code presented by another user throws away the
+     * tokens: that is someone else's consent link completed in this user's browser, and the tokens
+     * belong to neither of them.
+     */
+    @Transactional(noRollbackFor = {LinkCodeNotFoundException.class, LinkCodeUserMismatchException.class})
+    public void completeLink(String appUserId, String linkCode) {
+        Instant now = Instant.now();
+        PendingYahooLink pending = pendingLinkRepository.findById(hash(linkCode))
+                .orElseThrow(() -> new LinkCodeNotFoundException("Unknown or already-used Yahoo link code"));
+        pendingLinkRepository.delete(pending);
+        pendingLinkRepository.flush();
+        if (now.isAfter(pending.getExpiresAt())) {
+            throw new LinkCodeNotFoundException("Yahoo link code expired");
+        }
+        if (!MessageDigest.isEqual(pending.getAppUserId().getBytes(StandardCharsets.UTF_8),
+                appUserId.getBytes(StandardCharsets.UTF_8))) {
+            throw new LinkCodeUserMismatchException(
+                    "This Yahoo connection was started by a different account; it has been discarded");
+        }
+        YahooOAuthToken entity = repository.findByAppUserId(appUserId)
+                .orElseGet(() -> {
+                    YahooOAuthToken fresh = new YahooOAuthToken();
+                    fresh.setAppUserId(appUserId);
+                    fresh.setCreatedAt(now);
+                    return fresh;
+                });
+        entity.setAccessTokenEnc(pending.getAccessTokenEnc());
+        if (pending.getRefreshTokenEnc() != null) {
+            entity.setRefreshTokenEnc(pending.getRefreshTokenEnc());
+        }
+        if (pending.getYahooGuid() != null) {
+            entity.setYahooGuid(pending.getYahooGuid());
+        }
+        entity.setAccessExpiresAt(pending.getAccessExpiresAt());
+        entity.setUpdatedAt(now);
+        repository.save(entity);
+    }
+
+    private static String newLinkCode() {
+        byte[] bytes = new byte[LINK_CODE_BYTES];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private static String hash(String linkCode) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(linkCode.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
+    }
+
+    /** Drops pending states and parked connections whose TTL has passed. */
     @Scheduled(cron = "${yahoo.oauth.pending-state-purge-cron:0 20 * * * *}")
     @Transactional
     public void purgeExpiredPendingStates() {
-        pendingStateRepository.deleteByExpiresAtBefore(Instant.now());
+        Instant now = Instant.now();
+        pendingStateRepository.deleteByExpiresAtBefore(now);
+        pendingLinkRepository.deleteByExpiresAtBefore(now);
     }
 
     /**

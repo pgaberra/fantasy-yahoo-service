@@ -13,6 +13,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class YahooOAuthControllerTest {
 
@@ -29,13 +30,31 @@ class YahooOAuthControllerTest {
         controller = new YahooOAuthController(oauthService, props);
     }
 
+    /**
+     * Nothing is connected yet at this point, so the web is asked to confirm, and the link code
+     * rides in the fragment, which no server log or Referer header ever sees.
+     */
     @Test
-    void callback_withValidCodeAndState_connectsAndRedirects() {
+    void callback_withValidCodeAndState_parksTheTokensAndAsksTheWebToConfirm() {
+        when(oauthService.handleCallback("the-code", "the-state"))
+                .thenReturn(new YahooOAuthService.PendingLink("link-code", false));
+
         ResponseEntity<Void> response = controller.callback("the-code", "the-state", null);
 
-        verify(oauthService).handleCallback("the-code", "the-state");
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FOUND);
-        assertThat(response.getHeaders().getLocation()).hasToString(WEB + "?yahoo=connected");
+        assertThat(response.getHeaders().getLocation())
+                .hasToString(WEB + "?yahoo=confirm&account=user#link=link-code");
+    }
+
+    @Test
+    void callback_forTheServiceAccount_tellsTheWebWhichAccountToConfirm() {
+        when(oauthService.handleCallback("the-code", "the-state"))
+                .thenReturn(new YahooOAuthService.PendingLink("link-code", true));
+
+        ResponseEntity<Void> response = controller.callback("the-code", "the-state", null);
+
+        assertThat(response.getHeaders().getLocation())
+                .hasToString(WEB + "?yahoo=confirm&account=service#link=link-code");
     }
 
     @Test
