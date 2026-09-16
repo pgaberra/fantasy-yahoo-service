@@ -31,7 +31,9 @@ class YahooOAuthServiceTest {
     private TokenCipher cipher;
     private YahooOAuthTokenRepository tokenRepository;
     private PendingOAuthStateRepository pendingStateRepository;
+    private PendingYahooLinkRepository pendingLinkRepository;
     private YahooOAuthService service;
+    private String linkCode;
 
     @BeforeEach
     void setUp() {
@@ -40,8 +42,9 @@ class YahooOAuthServiceTest {
         cipher = mock(TokenCipher.class);
         tokenRepository = mock(YahooOAuthTokenRepository.class);
         pendingStateRepository = mock(PendingOAuthStateRepository.class);
+        pendingLinkRepository = mock(PendingYahooLinkRepository.class);
         service = new YahooOAuthService(PROPS, stateCodec, tokenClient, cipher,
-                tokenRepository, pendingStateRepository);
+                tokenRepository, pendingStateRepository, pendingLinkRepository);
     }
 
     @Test
@@ -60,8 +63,12 @@ class YahooOAuthServiceTest {
         assertThat(decoded.nonce()).isEqualTo(saved.getNonce());
     }
 
+    /**
+     * The callback runs in whichever browser finished consent, so it must not attach anything:
+     * the tokens are parked until the user who started the flow claims them.
+     */
     @Test
-    void handleCallback_consumesPendingState_exchangesCode_andStoresTokens() {
+    void handleCallback_consumesPendingState_exchangesCode_andParksTokensWithoutAttachingThem() {
         Instant now = Instant.now();
         String nonce = "nonce-1";
         String state = stateCodec.encode("user-1", nonce, now);
@@ -72,11 +79,109 @@ class YahooOAuthServiceTest {
         when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.empty());
         when(cipher.encrypt(any())).thenReturn("ciphertext");
 
-        service.handleCallback("the-code", state);
+        YahooOAuthService.PendingLink link = service.handleCallback("the-code", state);
 
         verify(pendingStateRepository).delete(pending);
         verify(tokenClient).exchangeCode("the-code");
-        verify(tokenRepository).save(any(YahooOAuthToken.class));
+        verify(tokenRepository, never()).save(any());
+        ArgumentCaptor<PendingYahooLink> captor = ArgumentCaptor.forClass(PendingYahooLink.class);
+        verify(pendingLinkRepository).save(captor.capture());
+        PendingYahooLink parked = captor.getValue();
+        assertThat(parked.getAppUserId()).isEqualTo("user-1");
+        assertThat(parked.getAccessTokenEnc()).isEqualTo("ciphertext");
+        assertThat(parked.getYahooGuid()).isEqualTo("guid");
+        assertThat(link.serviceAccount()).isFalse();
+        assertThat(link.linkCode()).hasSizeGreaterThanOrEqualTo(43);
+        assertThat(parked.getCodeHash()).isNotEqualTo(link.linkCode()).hasSize(64);
+    }
+
+    @Test
+    void handleCallback_forTheServiceAccount_saysSo() {
+        Instant now = Instant.now();
+        String state = stateCodec.encode(YahooOAuthService.SERVICE_ACCOUNT_ID, "nonce-s", now);
+        when(pendingStateRepository.findById("nonce-s")).thenReturn(Optional.of(
+                new PendingOAuthState("nonce-s", YahooOAuthService.SERVICE_ACCOUNT_ID, now.plusSeconds(600), now)));
+        when(tokenClient.exchangeCode("the-code"))
+                .thenReturn(new YahooTokenClient.TokenResponse("at", "rt", 3600, "bearer", "guid"));
+        when(cipher.encrypt(any())).thenReturn("ciphertext");
+
+        assertThat(service.handleCallback("the-code", state).serviceAccount()).isTrue();
+    }
+
+    @Test
+    void completeLink_byTheUserWhoStartedTheFlow_attachesTheParkedTokens_andSpendsTheCode() {
+        PendingYahooLink parked = parkedLinkFor("user-1", Instant.now().plusSeconds(300));
+        when(pendingLinkRepository.findById(parked.getCodeHash())).thenReturn(Optional.of(parked));
+        when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.empty());
+
+        service.completeLink("user-1", linkCode);
+
+        verify(pendingLinkRepository).delete(parked);
+        ArgumentCaptor<YahooOAuthToken> captor = ArgumentCaptor.forClass(YahooOAuthToken.class);
+        verify(tokenRepository).save(captor.capture());
+        YahooOAuthToken saved = captor.getValue();
+        assertThat(saved.getAppUserId()).isEqualTo("user-1");
+        assertThat(saved.getAccessTokenEnc()).isEqualTo("at-enc");
+        assertThat(saved.getRefreshTokenEnc()).isEqualTo("rt-enc");
+        assertThat(saved.getYahooGuid()).isEqualTo("guid");
+    }
+
+    /**
+     * The attack this step exists for: someone starts a connect, sends their consent link to a
+     * victim, and the victim approves it. The victim's browser then claims the code as the victim,
+     * which is not who started it, so the victim's Yahoo tokens are thrown away rather than stored
+     * under the sender's account.
+     */
+    @Test
+    void completeLink_byAnyoneElse_isRejected_andDiscardsTheTokens() {
+        PendingYahooLink parked = parkedLinkFor("attacker", Instant.now().plusSeconds(300));
+        when(pendingLinkRepository.findById(parked.getCodeHash())).thenReturn(Optional.of(parked));
+
+        assertThatThrownBy(() -> service.completeLink("victim", linkCode))
+                .isInstanceOf(LinkCodeUserMismatchException.class);
+
+        verify(pendingLinkRepository).delete(parked);
+        verify(tokenRepository, never()).save(any());
+    }
+
+    @Test
+    void completeLink_withAnUnknownOrUsedCode_isRejected() {
+        when(pendingLinkRepository.findById(any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.completeLink("user-1", "never-issued"))
+                .isInstanceOf(LinkCodeNotFoundException.class);
+        verify(tokenRepository, never()).save(any());
+    }
+
+    @Test
+    void completeLink_afterTheCodeExpired_isRejected_andDiscardsTheTokens() {
+        PendingYahooLink parked = parkedLinkFor("user-1", Instant.now().minusSeconds(1));
+        when(pendingLinkRepository.findById(parked.getCodeHash())).thenReturn(Optional.of(parked));
+
+        assertThatThrownBy(() -> service.completeLink("user-1", linkCode))
+                .isInstanceOf(LinkCodeNotFoundException.class);
+
+        verify(pendingLinkRepository).delete(parked);
+        verify(tokenRepository, never()).save(any());
+    }
+
+    /** Parks tokens exactly as the callback would, and returns the row it saved. */
+    private PendingYahooLink parkedLinkFor(String appUserId, Instant expiresAt) {
+        Instant now = Instant.now();
+        String state = stateCodec.encode(appUserId, "nonce-p", now);
+        when(pendingStateRepository.findById("nonce-p"))
+                .thenReturn(Optional.of(new PendingOAuthState("nonce-p", appUserId, now.plusSeconds(600), now)));
+        when(tokenClient.exchangeCode("the-code"))
+                .thenReturn(new YahooTokenClient.TokenResponse("at", "rt", 3600, "bearer", "guid"));
+        when(cipher.encrypt("at")).thenReturn("at-enc");
+        when(cipher.encrypt("rt")).thenReturn("rt-enc");
+        linkCode = service.handleCallback("the-code", state).linkCode();
+        ArgumentCaptor<PendingYahooLink> captor = ArgumentCaptor.forClass(PendingYahooLink.class);
+        verify(pendingLinkRepository).save(captor.capture());
+        PendingYahooLink saved = captor.getValue();
+        return new PendingYahooLink(saved.getCodeHash(), saved.getAppUserId(), saved.getYahooGuid(),
+                saved.getAccessTokenEnc(), saved.getRefreshTokenEnc(), saved.getAccessExpiresAt(),
+                expiresAt, saved.getCreatedAt());
     }
 
     @Test
