@@ -17,8 +17,12 @@ player the app serves, refreshed by a scheduled sync (see `players/` below).
 web "Connect Yahoo" → BFF → POST /api/v1/yahoo/oauth/authorize-url?appUserId=…
    → service returns the Yahoo consent URL (signed `state` carries appUserId)
    → browser → Yahoo consent → GET /api/v1/yahoo/oauth/callback?code&state
-   → service verifies state, exchanges code→tokens, stores them encrypted,
-     302-redirects the browser back to ${WEB_POST_CONNECT_URL}?yahoo=connected
+   → service verifies state, exchanges code→tokens, parks them encrypted under a one-time
+     link code (yahoo_oauth_pending_links, 5 min), 302-redirects the browser to
+     ${WEB_POST_CONNECT_URL}?yahoo=confirm&account=user|service#link=<code>
+   → signed-in web → BFF → POST /api/v1/yahoo/oauth/complete {appUserId, code}
+   → tokens attached only if appUserId started the flow; any other user gets 409 and the
+     parked tokens are discarded
 later: BFF → GET /api/v1/yahoo/leagues / …/settings (uses the stored tokens)
 ```
 
@@ -59,10 +63,17 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   - `YahooTokenClient` — calls Yahoo's `/oauth2/get_token` (code exchange + refresh); throws
     `YahooGrantRejectedException` for Yahoo's `invalid_grant` (the stored token is dropped,
     re-consent is the only fix) and `YahooUpstreamException` for any other Yahoo failure.
+  - `PendingYahooLink` / `PendingYahooLinkRepository` — JPA entity (`yahoo_oauth_pending_links`,
+    V9): tokens from a finished consent, keyed by a SHA-256 of the one-time link code, waiting to
+    be claimed. The state proves who *started* a flow, never whose browser *finished* it, so the
+    callback must not attach tokens itself: a consent link sent to someone else would store their
+    Yahoo account under the sender's. The claim through the BFF is what binds the two. Purged by
+    the same hourly job.
   - `YahooOAuthService` — builds the authorize URL, handles the callback (verify→consume
-    nonce→exchange→store), and hands out a valid access token (refreshing transparently).
-  - `YahooOAuthController` — `/api/v1/yahoo/oauth/{authorize-url,callback,connection}`.
-  - `dto/` — `AuthorizeUrlResponse`, `ConnectionResponse`.
+    nonce→exchange→park), attaches a parked connection for the user who started it
+    (`completeLink`), and hands out a valid access token (refreshing transparently).
+  - `YahooOAuthController` — `/api/v1/yahoo/oauth/{authorize-url,callback,complete,connection}`.
+  - `dto/` — `AuthorizeUrlResponse`, `CompleteLinkRequest`, `ConnectionResponse`.
 - `league/` — fantasy league data:
   - `YahooFantasyClient` — `RestClient` over the Yahoo Fantasy API; returns `JsonNode`
     (Yahoo's JSON is deeply nested with numeric-keyed objects mixed into arrays).

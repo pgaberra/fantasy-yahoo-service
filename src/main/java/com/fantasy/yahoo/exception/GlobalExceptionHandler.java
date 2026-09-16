@@ -1,11 +1,15 @@
 package com.fantasy.yahoo.exception;
 
+import com.fantasy.yahoo.oauth.LinkCodeNotFoundException;
+import com.fantasy.yahoo.oauth.LinkCodeUserMismatchException;
 import com.fantasy.yahoo.oauth.YahooNotConnectedException;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
@@ -19,6 +23,26 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorDto> handleNotConnected(YahooNotConnectedException e) {
         // Expected client outcome (user hasn't connected Yahoo), not a server fault.
         return build(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    @ExceptionHandler(LinkCodeNotFoundException.class)
+    public ResponseEntity<ErrorDto> handleLinkCodeNotFound(LinkCodeNotFoundException e) {
+        return build(HttpStatus.NOT_FOUND, e.getMessage());
+    }
+
+    /**
+     * WARN: a code claimed by a user other than the one who started the flow is what a consent link
+     * sent to someone else looks like when it works, so it is worth seeing, but it is not our fault.
+     */
+    @ExceptionHandler(LinkCodeUserMismatchException.class)
+    public ResponseEntity<ErrorDto> handleLinkCodeUserMismatch(LinkCodeUserMismatchException e) {
+        log.warn("A Yahoo link code was claimed by a different user than the one who started the flow; discarded");
+        return build(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class})
+    public ResponseEntity<ErrorDto> handleInvalidBody(Exception e) {
+        return build(HttpStatus.BAD_REQUEST, "Malformed request body");
     }
 
     @ExceptionHandler(IllegalArgumentException.class)
