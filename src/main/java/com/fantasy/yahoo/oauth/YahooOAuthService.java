@@ -120,6 +120,10 @@ public class YahooOAuthService {
      * <p>{@code noRollbackFor} is what makes the deletion stick: it has to survive the exception
      * that reports it. Safe because this method is the outermost transaction on every path that
      * reaches it — no caller of it is itself {@code @Transactional}.
+     *
+     * <p>A stored token the configured key cannot decrypt is also reported as not connected, since
+     * a reconnect is the remedy there too, but the row is kept: if the key is only wrong for a
+     * while, deleting would cost every user their connection.
      */
     @Transactional(noRollbackFor = YahooNotConnectedException.class)
     public String validAccessToken(String appUserId) {
@@ -128,11 +132,12 @@ public class YahooOAuthService {
                         "No Yahoo account is connected for this user"));
         Instant now = Instant.now();
         if (now.isBefore(token.getAccessExpiresAt().minusSeconds(EXPIRY_SKEW_SECONDS))) {
-            return cipher.decrypt(token.getAccessTokenEnc());
+            return readable(SERVICE_ACCOUNT_ID.equals(appUserId), token.getAccessTokenEnc());
         }
+        String refreshToken = readable(SERVICE_ACCOUNT_ID.equals(appUserId), token.getRefreshTokenEnc());
         YahooTokenClient.TokenResponse refreshed;
         try {
-            refreshed = tokenClient.refresh(cipher.decrypt(token.getRefreshTokenEnc()));
+            refreshed = tokenClient.refresh(refreshToken);
         } catch (YahooGrantRejectedException e) {
             repository.delete(token);
             // WARN, not ERROR: the service did its job and the remedy is a human reconnecting an
@@ -145,6 +150,27 @@ public class YahooOAuthService {
         }
         upsert(appUserId, refreshed, now);
         return refreshed.accessToken();
+    }
+
+    /** The id is reduced to service account or user before it gets here, as it is request-supplied. */
+    private String readable(boolean serviceAccount, String stored) {
+        try {
+            return cipher.decrypt(stored);
+        } catch (UnreadableTokenException e) {
+            // ERROR, unlike a rejected grant: this is our own key and our own data disagreeing, and
+            // if the key is misconfigured it hits every user, so it has to reach Sentry.
+            // The subject is part of the literal, not a placeholder argument: FindSecBugs reads a
+            // placeholder next to the exception as a CRLF injection.
+            log.error(serviceAccount
+                    ? "Stored Yahoo token for the service account cannot be decrypted with the configured "
+                            + "TOKEN_ENCRYPTION_KEY (key changed, or the row was written under another key); "
+                            + "kept it, reconnect required"
+                    : "Stored Yahoo token for a user cannot be decrypted with the configured "
+                            + "TOKEN_ENCRYPTION_KEY (key changed, or the row was written under another key); "
+                            + "kept it, reconnect required", e);
+            throw new YahooNotConnectedException(
+                    "The stored Yahoo authorization can no longer be read; reconnect the Yahoo account");
+        }
     }
 
     private void upsert(String appUserId, YahooTokenClient.TokenResponse tokens, Instant now) {

@@ -47,7 +47,13 @@ public class TokenCipher {
         }
     }
 
+    /**
+     * @throws UnreadableTokenException when the value cannot be decrypted with the configured key.
+     *         A missing or malformed key is reported as the plain {@link IllegalStateException} it
+     *         is, since that is a configuration fault and not a property of the stored token.
+     */
     public String decrypt(String stored) {
+        SecretKeySpec key = key();
         try {
             byte[] combined = Base64.getDecoder().decode(stored);
             ByteBuffer buffer = ByteBuffer.wrap(combined);
@@ -56,10 +62,10 @@ public class TokenCipher {
             byte[] ciphertext = new byte[buffer.remaining()];
             buffer.get(ciphertext);
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(GCM_TAG_BITS, iv));
+            cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(GCM_TAG_BITS, iv));
             return new String(cipher.doFinal(ciphertext), java.nio.charset.StandardCharsets.UTF_8);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to decrypt token", e);
+            throw new UnreadableTokenException("Failed to decrypt token", e);
         }
     }
 
