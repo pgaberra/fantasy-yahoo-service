@@ -36,6 +36,34 @@ redirect URI(s) — and set `YAHOO_REDIRECT_URI` to the exact same value:
 
 If a Yahoo app allows only one redirect URI, use one app per environment.
 
+## Only the callback is public
+
+The public domain serves **only** `/api/v1/yahoo/oauth/callback`. Every other path, including
+`/actuator/health` and the whole internal API, answers 503 from the proxy and never reaches the
+app. The BFF and the health monitor use `yahoo-service:8088` on the Docker network. Before
+2026-09-16 the public host routed every path, so the internal API key was the only thing between
+the internet and each user's Yahoo leagues.
+
+The restriction lives in Coolify, not in this repo, and Coolify can undo it:
+
+- **Readonly labels** is **off** for both yahoo apps, so Coolify uses the stored custom labels
+  instead of generating its own on each deploy. Both Traefik routers (`http-0-…`, `https-0-…`)
+  have the rule `Host(`yahoo[.staging].slapstat.com`) && PathPrefix(`/api/v1/yahoo/oauth/callback`)`.
+  The `https` router keeps `gzip,yahoo-ratelimit`.
+- **Strip prefix** is **off**, and no `stripprefix` middleware exists. With it, the callback
+  would reach the app as `/`, be refused by the key filter (401), and no one could connect Yahoo.
+- The Coolify **domain** stays the bare host (`https://yahoo.slapstat.com`). Putting the path in
+  the domain field made Coolify regenerate the labels, adding a strip-prefix middleware and
+  dropping the rate limit.
+
+**After changing the domain or the labels in Coolify, check from outside:**
+
+```bash
+for p in /actuator/health /api/v1/yahoo/oauth/callback; do echo "$p $(curl -s -o /dev/null -w '%{http_code}' https://yahoo.slapstat.com$p)"; done
+```
+
+Expect `503` and `302`.
+
 ## Environment variables (set in Coolify, per environment)
 
 | Key | Value |

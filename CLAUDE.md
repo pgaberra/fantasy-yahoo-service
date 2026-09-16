@@ -203,8 +203,9 @@ committed. Never merge a PR titled "wip"/"draft".
 
 - Dockerized (multi-stage `Dockerfile`), deployed via **Coolify** (Hetzner) backed by its
   own dedicated Coolify Postgres, on both prod and staging. Unlike the other internal
-  services it has a **public domain** (`yahoo.slapstat.com` / `yahoo.staging.slapstat.com`)
-  for the OAuth callback, plus the internal alias `yahoo-service:8088` the BFF calls. See
-  `DEPLOYMENT.md`. Set `INTERNAL_API_KEY` (same value the BFF sends as
+  services it has a **public domain** (`yahoo.slapstat.com` / `yahoo.staging.slapstat.com`),
+  which serves **only** the OAuth callback path, plus the internal alias `yahoo-service:8088`
+  the BFF calls. The restriction is Coolify config that a domain edit can undo; see *Only the
+  callback is public* in `DEPLOYMENT.md`. Set `INTERNAL_API_KEY` (same value the BFF sends as
   `YAHOO_INTERNAL_API_KEY`), the `YAHOO_*` OAuth vars, and `TOKEN_ENCRYPTION_KEY`. Health
   check: `/actuator/health`.
