@@ -79,8 +79,10 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
     (Yahoo's JSON is deeply nested with numeric-keyed objects mixed into arrays).
   - `YahooLeagueService` — parses that JSON defensively into clean DTOs; gets a valid
     access token from `YahooOAuthService` (refreshing as needed).
-  - `YahooLeagueController` — `GET /api/v1/yahoo/leagues` and
-    `…/leagues/{leagueKey}/settings`.
+  - `YahooLeagueController` — `GET /api/v1/yahoo/leagues`, `…/leagues/{leagueKey}/settings`,
+    `…/teams` and `…/draft`. The draft is one Yahoo call
+    (`/league/{key};out=settings,draftresults,teams`): its status, the teams in first-round
+    order and every pick Yahoo lists, which the BFF polls while a user follows a live draft.
   - `dto/` — `LeaguesResponse`/`LeagueSummary`, `LeagueSettingsResponse` (+ `StatCategory`,
     `RosterSlot`).
 - `config/` — `OpenApiConfig` (pins server URL to `/`), `YahooOAuthProperties`

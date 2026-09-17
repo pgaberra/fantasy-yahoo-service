@@ -1,5 +1,7 @@
 package com.fantasy.yahoo.league;
 
+import com.fantasy.yahoo.league.dto.DraftStatus;
+import com.fantasy.yahoo.league.dto.LeagueDraftResponse;
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
 import com.fantasy.yahoo.league.dto.LeagueTeamsResponse;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
@@ -101,6 +103,73 @@ class YahooLeagueServiceTest {
         assertThat(response.teams().getFirst().mine()).isFalse();
         assertThat(response.teams().get(1).name()).isEqualTo("Bravo");
         assertThat(response.teams().get(1).mine()).isTrue();
+    }
+
+    @Test
+    void draft_ordersTeamsByFirstRoundAndParsesPicks() throws Exception {
+        when(oauthService.validAccessToken(USER)).thenReturn("token");
+        when(client.getLeagueDraft("token", "465.l.9")).thenReturn(json(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\",\"draft_status\":\"inprogress\"},"
+                + "{\"settings\":[{\"is_auction_draft\":\"0\"}]},"
+                + "{\"draft_results\":{"
+                + "\"0\":{\"draft_result\":{\"pick\":1,\"round\":1,\"team_key\":\"465.l.9.t.2\",\"player_key\":\"465.p.6743\"}},"
+                + "\"1\":{\"draft_result\":{\"pick\":2,\"round\":1,\"team_key\":\"465.l.9.t.1\",\"player_key\":\"465.p.7109\"}},"
+                + "\"2\":{\"draft_result\":{\"pick\":3,\"round\":2,\"team_key\":\"465.l.9.t.1\"}},"
+                + "\"count\":3}},"
+                + "{\"teams\":{"
+                + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"name\":\"Alpha\"},{\"is_owned_by_current_login\":1}]]},"
+                + "\"1\":{\"team\":[[{\"team_key\":\"465.l.9.t.2\"},{\"name\":\"Bravo\"}]]},"
+                + "\"count\":2}}]}}"));
+
+        LeagueDraftResponse draft = service().draft(USER, "465.l.9");
+
+        assertThat(draft.leagueKey()).isEqualTo("465.l.9");
+        assertThat(draft.status()).isEqualTo(DraftStatus.IN_PROGRESS);
+        assertThat(draft.auction()).isFalse();
+        assertThat(draft.teams()).extracting("teamKey").containsExactly("465.l.9.t.2", "465.l.9.t.1");
+        assertThat(draft.teams().get(1).mine()).isTrue();
+        assertThat(draft.picks()).hasSize(3);
+        assertThat(draft.picks().getFirst().playerKey()).isEqualTo("465.p.6743");
+        assertThat(draft.picks().getFirst().playerId()).isEqualTo(6743);
+        assertThat(draft.picks().get(2).playerKey()).isNull();
+        assertThat(draft.picks().get(2).playerId()).isNull();
+    }
+
+    @Test
+    void draft_beforeAnyOrderKeepsYahooTeamOrderAndReadsAuction() throws Exception {
+        when(oauthService.validAccessToken(USER)).thenReturn("token");
+        when(client.getLeagueDraft("token", "465.l.9")).thenReturn(json(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\",\"draft_status\":\"predraft\"},"
+                + "{\"settings\":[{\"is_auction_draft\":\"1\"}]},"
+                + "{\"draft_results\":[]},"
+                + "{\"teams\":{"
+                + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"name\":\"Alpha\"}]]},"
+                + "\"1\":{\"team\":[[{\"team_key\":\"465.l.9.t.2\"},{\"name\":\"Bravo\"}]]},"
+                + "\"count\":2}}]}}"));
+
+        LeagueDraftResponse draft = service().draft(USER, "465.l.9");
+
+        assertThat(draft.status()).isEqualTo(DraftStatus.PRE_DRAFT);
+        assertThat(draft.auction()).isTrue();
+        assertThat(draft.teams()).extracting("teamKey").containsExactly("465.l.9.t.1", "465.l.9.t.2");
+        assertThat(draft.picks()).isEmpty();
+    }
+
+    @Test
+    void draftStatus_mapsYahooValues() {
+        assertThat(YahooLeagueService.draftStatus("predraft")).isEqualTo(DraftStatus.PRE_DRAFT);
+        assertThat(YahooLeagueService.draftStatus("postdraft")).isEqualTo(DraftStatus.FINISHED);
+        assertThat(YahooLeagueService.draftStatus("inprogress")).isEqualTo(DraftStatus.IN_PROGRESS);
+        assertThat(YahooLeagueService.draftStatus(null)).isEqualTo(DraftStatus.UNKNOWN);
+    }
+
+    @Test
+    void playerId_readsTheNumberAfterThePlayerMarker() {
+        assertThat(YahooLeagueService.playerId("465.p.6743")).isEqualTo(6743);
+        assertThat(YahooLeagueService.playerId("nhl.p.12")).isEqualTo(12);
+        assertThat(YahooLeagueService.playerId("465.t.1")).isNull();
+        assertThat(YahooLeagueService.playerId("465.p.x")).isNull();
+        assertThat(YahooLeagueService.playerId(null)).isNull();
     }
 
     private static JsonNode json(String raw) throws Exception {
