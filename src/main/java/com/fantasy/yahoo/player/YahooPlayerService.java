@@ -2,6 +2,8 @@ package com.fantasy.yahoo.player;
 
 import com.fantasy.yahoo.league.YahooFantasyClient;
 import com.fantasy.yahoo.oauth.YahooOAuthService;
+import com.fantasy.yahoo.player.dto.YahooAvailability;
+import com.fantasy.yahoo.player.dto.YahooAvailablePlayerResponse;
 import com.fantasy.yahoo.player.dto.YahooGoalieStats;
 import com.fantasy.yahoo.player.dto.YahooPlayerResponse;
 import com.fantasy.yahoo.player.dto.YahooSkaterStats;
@@ -55,6 +57,67 @@ public class YahooPlayerService {
                 (token, start) -> client.getLeaguePlayers(token, leagueKey, start, season),
                 root -> root.path("fantasy_content").path("league").path(1).path("players"),
                 "league " + sanitize(leagueKey));
+    }
+
+    /**
+     * The players the league has available, best first, capped at {@code limit}.
+     *
+     * <p>Read with the **user's own** token, not the service account's: what is available is a
+     * fact about their league, and the service account is not in it. Yahoo's actual-rank sort is
+     * what makes a cap honest — the first page is the best available, so a cap trims the tail
+     * nobody is streaming rather than an arbitrary slice.
+     */
+    public List<YahooAvailablePlayerResponse> availablePlayers(
+            String appUserId, String leagueKey, int limit) {
+        String accessToken = oauthService.validAccessToken(appUserId);
+        List<YahooAvailablePlayerResponse> available = new ArrayList<>();
+        for (int index = 0; index < MAX_PAGES && available.size() < limit; index++) {
+            int count = Math.min(PAGE_SIZE, limit - available.size());
+            JsonNode root = client.getAvailablePlayers(accessToken, leagueKey, index * PAGE_SIZE, count);
+            List<JsonNode> entries =
+                    numericChildren(root.path("fantasy_content").path("league").path(1).path("players"));
+            for (JsonNode entry : entries) {
+                YahooPlayerResponse player = parsePlayer(entry);
+                // Yahoo has been known to serve a fuller page than `count` asked for, so the cap
+                // is enforced here as well as in the request: a limit the caller set is a promise
+                // about the response, not a hint to Yahoo.
+                if (player != null && available.size() < limit) {
+                    available.add(withAvailability(player, entry));
+                }
+            }
+            if (entries.size() < count) {
+                return available;
+            }
+        }
+        return available;
+    }
+
+    private static YahooAvailablePlayerResponse withAvailability(
+            YahooPlayerResponse player, JsonNode entry) {
+        return new YahooAvailablePlayerResponse(
+                player.yahooId(),
+                player.fullName(),
+                player.teamAbbrev(),
+                player.position(),
+                player.uniformNumber(),
+                player.goalie(),
+                player.eligiblePositions(),
+                YahooAvailability.of(ownershipType(entry)));
+    }
+
+    /**
+     * Yahoo hangs the ownership subresource off the player array as its own element, so it is
+     * found by looking rather than by index.
+     */
+    private static String ownershipType(JsonNode entry) {
+        JsonNode playerArr = entry.path("player");
+        for (int index = 0; index < playerArr.size(); index++) {
+            JsonNode ownership = playerArr.path(index).path("ownership");
+            if (ownership.hasNonNull("ownership_type")) {
+                return ownership.get("ownership_type").asText();
+            }
+        }
+        return null;
     }
 
     /** One page of players, by offset. */

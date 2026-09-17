@@ -46,6 +46,21 @@ public class YahooFantasyClient {
         return get(accessToken, "/league/{leagueKey}/settings?format=json", leagueKey);
     }
 
+    /**
+     * One page of the players a league has available: free agents and players on waivers, best
+     * first by Yahoo's own actual rank, with the ownership subresource that tells the two apart.
+     *
+     * <p>{@code status=A} is Yahoo's "available", which is the union of the two. Asking for free
+     * agents alone would hide the player a rival dropped an hour ago, who is the one a streamer is
+     * most often looking for.
+     */
+    public JsonNode getAvailablePlayers(String accessToken, String leagueKey, int start, int count) {
+        return get(accessToken,
+                "/league/{leagueKey}/players;status=A;sort=AR;start=" + start + ";count=" + count
+                        + ";out=ownership?format=json",
+                leagueKey);
+    }
+
     /** A league's teams (names, and which one belongs to the authenticated user). */
     public JsonNode getLeagueTeams(String accessToken, String leagueKey) {
         return get(accessToken, "/league/{leagueKey}/teams?format=json", leagueKey);

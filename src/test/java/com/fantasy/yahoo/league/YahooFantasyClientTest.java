@@ -40,6 +40,18 @@ class YahooFantasyClientTest {
     }
 
     @Test
+    void getAvailablePlayers_asksForAvailablePlayersInRankOrderWithOwnership() {
+        server.expect(requestTo(containsString(
+                        "/league/453.l.123/players;status=A;sort=AR;start=25;count=10;out=ownership?format=json")))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        client.getAvailablePlayers("tok", "453.l.123", 25, 10);
+
+        server.verify();
+    }
+
+    @Test
     void getLeagueSettings_urlEncodesTheLeagueKeySoItCannotInjectThePath() {
         // A '/' in the key must be percent-encoded (%2F) so it stays inside one path segment and
         // can't break out into a different Yahoo API path. Encoding is format-agnostic — no

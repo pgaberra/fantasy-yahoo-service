@@ -80,7 +80,13 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   - `YahooLeagueService` — parses that JSON defensively into clean DTOs; gets a valid
     access token from `YahooOAuthService` (refreshing as needed).
   - `YahooLeagueController` — `GET /api/v1/yahoo/leagues`, `…/leagues/{leagueKey}/settings`,
-    `…/teams` and `…/draft`. The draft is one Yahoo call
+    `…/teams`, `…/draft` and `…/free-agents`. **Free agents** are the players the league has
+    available, free agents and waivers together (Yahoo's `status=A`), in Yahoo's actual-rank order
+    so the first rows are the best available and a `limit` trims the tail rather than a slice;
+    `availability` tells the two apart from the `ownership` subresource, and is `UNKNOWN` rather
+    than a guess where Yahoo does not say. Read with the **user's own** token, since what is
+    available is a fact about their league and the service account is not in it. The draft is one
+    Yahoo call
     (`/league/{key};out=settings,draftresults,teams`): its status, the teams in first-round
     order and every pick Yahoo lists, which the BFF polls while a user follows a live draft.
   - `dto/` — `LeaguesResponse`/`LeagueSummary`, `LeagueSettingsResponse` (+ `StatCategory`,
