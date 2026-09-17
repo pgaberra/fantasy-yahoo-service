@@ -52,6 +52,14 @@ public class YahooFantasyClient {
     }
 
     /**
+     * A league's draft in one call: its metadata (which carries {@code draft_status}), settings,
+     * draft results and teams.
+     */
+    public JsonNode getLeagueDraft(String accessToken, String leagueKey) {
+        return get(accessToken, "/league/{leagueKey};out=settings,draftresults,teams?format=json", leagueKey);
+    }
+
+    /**
      * One page (25) of a game's player collection with each player's season stat line,
      * starting at the given offset. When {@code season} is blank Yahoo uses the current season.
      */

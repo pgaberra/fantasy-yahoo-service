@@ -1,5 +1,9 @@
 package com.fantasy.yahoo.league;
 
+import com.fantasy.yahoo.league.dto.DraftStatus;
+import com.fantasy.yahoo.league.dto.LeagueDraftPick;
+import com.fantasy.yahoo.league.dto.LeagueDraftResponse;
+import com.fantasy.yahoo.league.dto.LeagueDraftTeam;
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
 import com.fantasy.yahoo.league.dto.LeagueSummary;
 import com.fantasy.yahoo.league.dto.LeagueTeam;
@@ -9,11 +13,16 @@ import com.fantasy.yahoo.league.dto.RosterSlot;
 import com.fantasy.yahoo.league.dto.StatCategory;
 import com.fantasy.yahoo.oauth.YahooOAuthService;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.MissingNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -91,6 +100,135 @@ public class YahooLeagueService {
             }
         }
         return new LeagueTeamsResponse(teams);
+    }
+
+    public LeagueDraftResponse draft(String appUserId, String leagueKey) {
+        JsonNode root = client.getLeagueDraft(oauthService.validAccessToken(appUserId), leagueKey);
+        JsonNode leagueArray = root.path("fantasy_content").path("league");
+        JsonNode meta = leagueArray.path(0);
+
+        List<LeagueDraftPick> picks = parseDraftPicks(subresource(leagueArray, "draft_results"));
+        List<LeagueDraftTeam> teams = inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks);
+        JsonNode settings = subresource(leagueArray, "settings").path(0);
+
+        return new LeagueDraftResponse(
+                firstNonBlank(text(meta, "league_key"), leagueKey),
+                draftStatus(text(meta, "draft_status")),
+                settings.path("is_auction_draft").asInt(0) == 1,
+                teams,
+                picks);
+    }
+
+    /** With {@code out=…} Yahoo lists each sub-resource as its own element after the metadata. */
+    private static JsonNode subresource(JsonNode leagueArray, String name) {
+        for (JsonNode element : leagueArray) {
+            if (element.has(name)) {
+                return element.get(name);
+            }
+        }
+        return MissingNode.getInstance();
+    }
+
+    static DraftStatus draftStatus(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return DraftStatus.UNKNOWN;
+        }
+        return switch (raw) {
+            case "predraft" -> DraftStatus.PRE_DRAFT;
+            case "postdraft" -> DraftStatus.FINISHED;
+            default -> DraftStatus.IN_PROGRESS;
+        };
+    }
+
+    private static List<LeagueDraftPick> parseDraftPicks(JsonNode draftResults) {
+        List<LeagueDraftPick> picks = new ArrayList<>();
+        for (JsonNode entry : numericChildren(draftResults)) {
+            JsonNode result = flatten(entry.path("draft_result"));
+            if (!result.hasNonNull("pick") || !result.hasNonNull("team_key")) {
+                continue;
+            }
+            String playerKey = text(result, "player_key");
+            picks.add(new LeagueDraftPick(
+                    result.path("pick").asInt(),
+                    result.path("round").asInt(0),
+                    text(result, "team_key"),
+                    playerKey == null || playerKey.isBlank() ? null : playerKey,
+                    playerId(playerKey)));
+        }
+        picks.sort(Comparator.comparingInt(LeagueDraftPick::pick));
+        return picks;
+    }
+
+    private static List<LeagueDraftTeam> parseDraftTeams(JsonNode teamsNode) {
+        List<LeagueDraftTeam> teams = new ArrayList<>();
+        for (JsonNode entry : numericChildren(teamsNode)) {
+            String teamKey = null;
+            String name = null;
+            boolean mine = false;
+            for (JsonNode attribute : entry.path("team").path(0)) {
+                if (attribute.hasNonNull("team_key")) {
+                    teamKey = attribute.get("team_key").asText();
+                }
+                if (attribute.hasNonNull("name")) {
+                    name = attribute.get("name").asText();
+                }
+                if (attribute.hasNonNull("is_owned_by_current_login")) {
+                    mine = attribute.get("is_owned_by_current_login").asInt(0) == 1;
+                }
+            }
+            if (teamKey != null && name != null) {
+                teams.add(new LeagueDraftTeam(teamKey, name, mine));
+            }
+        }
+        return teams;
+    }
+
+    /** Teams in the order they pick in the first round; any team without a first-round pick follows. */
+    private static List<LeagueDraftTeam> inDraftOrder(List<LeagueDraftTeam> teams, List<LeagueDraftPick> picks) {
+        Map<String, LeagueDraftTeam> remaining = new LinkedHashMap<>();
+        teams.forEach(team -> remaining.put(team.teamKey(), team));
+        List<LeagueDraftTeam> ordered = new ArrayList<>();
+        for (LeagueDraftPick pick : picks) {
+            if (pick.round() != 1) {
+                continue;
+            }
+            LeagueDraftTeam team = remaining.remove(pick.teamKey());
+            if (team != null) {
+                ordered.add(team);
+            }
+        }
+        ordered.addAll(remaining.values());
+        return ordered;
+    }
+
+    /** A draft result is an object, or an array of single-key objects; either way, one object. */
+    private static JsonNode flatten(JsonNode node) {
+        if (!node.isArray()) {
+            return node;
+        }
+        ObjectNode merged =
+                JsonNodeFactory.instance.objectNode();
+        for (JsonNode part : node) {
+            if (part.isObject()) {
+                merged.setAll((ObjectNode) part);
+            }
+        }
+        return merged;
+    }
+
+    static Integer playerId(String playerKey) {
+        if (playerKey == null) {
+            return null;
+        }
+        int marker = playerKey.lastIndexOf(".p.");
+        if (marker < 0) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(playerKey.substring(marker + 3));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static List<StatCategory> parseStatCategories(JsonNode settings) {
