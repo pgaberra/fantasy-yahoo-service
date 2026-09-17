@@ -189,11 +189,28 @@ public class YahooOAuthService {
 
     /**
      * Whether a usable Yahoo connection exists. True means a stored token Yahoo has not refused —
-     * {@link #validAccessToken} drops the row as soon as it does, so this cannot go on claiming a
-     * connection that no longer works.
+     * {@link #validAccessToken} drops the row as soon as it does — and that the configured key can
+     * still read. An unreadable row is kept (see {@link #validAccessToken}), so existence alone
+     * would report connected after a key change while every use of it fails, and the UI would never
+     * offer the reconnect that fixes it. The refresh token is the one checked: every path through
+     * {@link #validAccessToken} ends up needing it, and both tokens are written under the same key.
+     *
+     * <p>WARN, not ERROR: the status check runs on every page that shows the connection, and the
+     * ERROR that has to reach Sentry for a wrong key is already raised where the token is used.
      */
     public boolean isConnected(String appUserId) {
-        return repository.existsByAppUserId(appUserId);
+        return repository.findByAppUserId(appUserId)
+                .map(token -> {
+                    try {
+                        cipher.decrypt(token.getRefreshTokenEnc());
+                        return true;
+                    } catch (UnreadableTokenException e) {
+                        log.warn("Stored Yahoo token cannot be decrypted with the configured "
+                                + "TOKEN_ENCRYPTION_KEY; reporting not connected so a reconnect is offered");
+                        return false;
+                    }
+                })
+                .orElse(false);
     }
 
     /**

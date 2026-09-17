@@ -278,6 +278,33 @@ class YahooOAuthServiceTest {
         verify(tokenRepository, never()).delete(any(YahooOAuthToken.class));
     }
 
+    @Test
+    void isConnected_withAReadableStoredToken_isTrue() {
+        when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.of(expiredToken()));
+        when(cipher.decrypt("rt-enc")).thenReturn("rt");
+
+        assertThat(service.isConnected("user-1")).isTrue();
+    }
+
+    @Test
+    void isConnected_withNoStoredToken_isFalse() {
+        when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.empty());
+
+        assertThat(service.isConnected("user-1")).isFalse();
+    }
+
+    @Test
+    void isConnected_whenTheStoredTokenCannotBeDecrypted_isFalse_andKeepsTheRow() {
+        // After a key change the row still exists but no use of it can work; reporting it as
+        // connected hid the reconnect that is the only remedy.
+        when(tokenRepository.findByAppUserId("user-1")).thenReturn(Optional.of(expiredToken()));
+        when(cipher.decrypt("rt-enc")).thenThrow(
+                new UnreadableTokenException("Failed to decrypt token", new RuntimeException()));
+
+        assertThat(service.isConnected("user-1")).isFalse();
+        verify(tokenRepository, never()).delete(any(YahooOAuthToken.class));
+    }
+
     /** A stored token whose access token has expired, so using it forces a refresh. */
     private static YahooOAuthToken expiredToken() {
         YahooOAuthToken token = new YahooOAuthToken();
