@@ -81,11 +81,12 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
     access token from `YahooOAuthService` (refreshing as needed).
   - `YahooLeagueController` — `GET /api/v1/yahoo/leagues`, `…/leagues/{leagueKey}/settings`,
     `…/teams`, `…/draft` and `…/free-agents`. **Teams** (from `/league/{key};out=draftresults,teams`)
-    name the manager's own seat in `draftPosition`, taken from the slot its team holds in the first
-    round and falling back to the league metadata's `draft_position`; the teams are ordered to match.
-    `draftPosition` is **null when Yahoo names the seat nowhere** — a setup must then ask rather than
-    read a seat off Yahoo's team order, which says nothing about who picks when. Yahoo tells no other
-    team's seat before the draft's slots exist. **Free agents** are the players the league has
+    name the manager's own seat in `draftPosition`, taken **only** from the slot its team holds in
+    the first round of `draft_results`; the teams are ordered to match. Before those slots exist —
+    for a live draft, until it runs — `draftPosition` is **null** and the teams keep Yahoo's own
+    order, which is not a draft order. The league metadata's `draft_position` looks like the answer
+    and is not: probed against a real 14-team league whose published order had the manager twelfth,
+    it said 10, and nothing in the payload tells a stale one from a right one (see `DECISIONS.md`). **Free agents** are the players the league has
     available, free agents and waivers together (Yahoo's `status=A`), in Yahoo's actual-rank order
     so the first rows are the best available and a `limit` trims the tail rather than a slice;
     `availability` tells the two apart from the `ownership` subresource, and is `UNKNOWN` rather

@@ -147,8 +147,14 @@ class YahooLeagueServiceTest {
         assertThat(response.teams()).extracting("name").containsExactly("Alpha", "Bravo");
     }
 
+    /**
+     * Read against the real 14-team league this came from, the metadata's `draft_position` said 10
+     * while the league's own published order had that manager twelfth — `draft_results` empty, no
+     * team carrying a position of its own, and nothing to tell the two apart from inside. A seat
+     * that cannot be told apart from a right one is worse than no seat.
+     */
     @Test
-    void teams_putTheOwnTeamAtItsDraftPosition() throws Exception {
+    void teams_ignoreTheLeagueMetadataSeatBeforeTheDraftListsSlots() throws Exception {
         when(oauthService.validAccessToken(USER)).thenReturn("token");
         when(client.getLeagueTeams("token", "477.l.1")).thenReturn(json(
                 "{\"fantasy_content\":{\"league\":[{\"league_key\":\"477.l.1\",\"draft_status\":\"predraft\",\"draft_position\":3},"
@@ -172,11 +178,11 @@ class YahooLeagueServiceTest {
                 + "\"count\":4}}]}}"));
 
         LeagueTeamsResponse teams = service().teams(USER, "477.l.1");
+        assertThat(teams.draftPosition()).isNull();
         assertThat(teams.teams()).extracting("name")
-                .containsExactly("Theo", "Albin", "Alexander", "Andreas");
-        assertThat(teams.draftPosition()).isEqualTo(3);
+                .containsExactly("Alexander", "Theo", "Albin", "Andreas");
         assertThat(service().draft(USER, "477.l.1").teams()).extracting("teamKey")
-                .containsExactly("477.l.1.t.2", "477.l.1.t.3", "477.l.1.t.1", "477.l.1.t.4");
+                .containsExactly("477.l.1.t.1", "477.l.1.t.2", "477.l.1.t.3", "477.l.1.t.4");
     }
 
     @Test
