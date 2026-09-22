@@ -91,20 +91,26 @@ public class YahooProbeService {
     }
 
     /**
-     * One of a league's resources exactly as Yahoo sends it, read with the service account's token,
-     * so only a league that account belongs to can be read.
+     * One of a league's resources exactly as Yahoo sends it. Read with the service account's token,
+     * so only a league that account belongs to can be read — or, given an {@code appUserId}, with
+     * that user's own token, which is the only way to see a league the service account is not in.
+     * The question is usually about a real league: what Yahoo sends for a draft whose order a
+     * commissioner has set cannot be seen in a test league where nobody has set one.
      */
-    public YahooLeagueProbeResponse probeLeague(String leagueKey, String resource) {
+    public YahooLeagueProbeResponse probeLeague(String leagueKey, String resource, String appUserId) {
         if (!YahooFantasyClient.LEAGUE_RESOURCES.containsKey(resource)) {
             return new YahooLeagueProbeResponse(false, null, null, null,
                     "resource must be one of " + new TreeSet<>(YahooFantasyClient.LEAGUE_RESOURCES.keySet()));
         }
+        boolean asUser = appUserId != null && !appUserId.isBlank();
         String accessToken;
         try {
-            accessToken = oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID);
+            accessToken = oauthService.validAccessToken(
+                    asUser ? appUserId : YahooOAuthService.SERVICE_ACCOUNT_ID);
         } catch (RuntimeException e) {
             return new YahooLeagueProbeResponse(false, null, null, null,
-                    "No usable service-account token: " + e.getMessage());
+                    (asUser ? "No usable token for that user: " : "No usable service-account token: ")
+                            + e.getMessage());
         }
         Attempt attempt = client.attemptLeagueResource(accessToken, leagueKey, resource);
         if (!attempt.ok()) {
