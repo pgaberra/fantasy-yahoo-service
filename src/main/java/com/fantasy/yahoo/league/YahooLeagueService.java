@@ -77,28 +77,19 @@ public class YahooLeagueService {
                 parseRosterPositions(settings));
     }
 
+    /**
+     * The league's teams in draft order. Read through the draft rather than {@code /teams}, whose
+     * order is Yahoo's team ids: once the order is set, even before the draft starts, the draft
+     * results list every slot with the team that holds it, and that is the order a draft setup needs.
+     */
     public LeagueTeamsResponse teams(String appUserId, String leagueKey) {
-        JsonNode root = client.getLeagueTeams(oauthService.validAccessToken(appUserId), leagueKey);
-        JsonNode teamsNode = root.path("fantasy_content").path("league").path(1).path("teams");
-
-        List<LeagueTeam> teams = new ArrayList<>();
-        for (JsonNode entry : numericChildren(teamsNode)) {
-            // Each team's metadata is an array of single-key objects; name and the
-            // is_owned_by_current_login marker (present only on the user's team) live inside it.
-            String name = null;
-            boolean mine = false;
-            for (JsonNode attribute : entry.path("team").path(0)) {
-                if (attribute.hasNonNull("name")) {
-                    name = attribute.get("name").asText();
-                }
-                if (attribute.hasNonNull("is_owned_by_current_login")) {
-                    mine = attribute.get("is_owned_by_current_login").asInt(0) == 1;
-                }
-            }
-            if (name != null) {
-                teams.add(new LeagueTeam(name, mine));
-            }
-        }
+        JsonNode root = client.getLeagueDraft(oauthService.validAccessToken(appUserId), leagueKey);
+        JsonNode leagueArray = root.path("fantasy_content").path("league");
+        List<LeagueDraftPick> picks = parseDraftPicks(subresource(leagueArray, "draft_results"));
+        List<LeagueTeam> teams = inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks)
+                .stream()
+                .map(team -> new LeagueTeam(team.name(), team.mine()))
+                .toList();
         return new LeagueTeamsResponse(teams);
     }
 
