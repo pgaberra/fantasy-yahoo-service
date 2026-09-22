@@ -130,6 +130,26 @@ class YahooLeagueServiceTest {
     }
 
     @Test
+    void teams_followTheirDraftPositionWhenYahooListsNoSlotsYet() throws Exception {
+        when(oauthService.validAccessToken(USER)).thenReturn("token");
+        when(client.getLeagueDraft("token", "477.l.1")).thenReturn(json(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"477.l.1\",\"draft_status\":\"predraft\"},"
+                + "{\"settings\":[{\"is_auction_draft\":\"0\"}]},"
+                + "{\"draft_results\":[]},"
+                + "{\"teams\":{"
+                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.1.t.1\"},{\"name\":\"Alexander\"},{\"is_owned_by_current_login\":1},{\"draft_position\":3}]]},"
+                + "\"1\":{\"team\":[[{\"team_key\":\"477.l.1.t.2\"},{\"name\":\"Theo\"},{\"draft_position\":2}]]},"
+                + "\"2\":{\"team\":[[{\"team_key\":\"477.l.1.t.3\"},{\"name\":\"Albin\"},{\"draft_position\":1}]]},"
+                + "\"3\":{\"team\":[[{\"team_key\":\"477.l.1.t.4\"},{\"name\":\"Andreas\"},{\"draft_position\":4}]]},"
+                + "\"count\":4}}]}}"));
+
+        assertThat(service().teams(USER, "477.l.1").teams()).extracting("name")
+                .containsExactly("Albin", "Theo", "Alexander", "Andreas");
+        assertThat(service().draft(USER, "477.l.1").teams()).extracting("teamKey")
+                .containsExactly("477.l.1.t.3", "477.l.1.t.2", "477.l.1.t.1", "477.l.1.t.4");
+    }
+
+    @Test
     void draft_ordersTeamsByFirstRoundAndParsesPicks() throws Exception {
         when(oauthService.validAccessToken(USER)).thenReturn("token");
         when(client.getLeagueDraft("token", "465.l.9")).thenReturn(json(
