@@ -3,12 +3,14 @@ package com.fantasy.yahoo.players;
 import com.fantasy.yahoo.league.YahooFantasyClient;
 import com.fantasy.yahoo.league.YahooFantasyClient.Attempt;
 import com.fantasy.yahoo.oauth.YahooOAuthService;
+import com.fantasy.yahoo.players.dto.YahooLeagueProbeResponse;
 import com.fantasy.yahoo.players.dto.YahooProbeResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import java.util.TreeSet;
 
 /**
  * Asks Yahoo one question and reports the answer verbatim: can the service account read this
@@ -86,6 +88,29 @@ public class YahooProbeService {
                     "Yahoo answered 200 with a body this could not read as a player page");
         }
         return new YahooProbeResponse(true, attempt.path(), attempt.status(), players, null);
+    }
+
+    /**
+     * One of a league's resources exactly as Yahoo sends it, read with the service account's token,
+     * so only a league that account belongs to can be read.
+     */
+    public YahooLeagueProbeResponse probeLeague(String leagueKey, String resource) {
+        if (!YahooFantasyClient.LEAGUE_RESOURCES.containsKey(resource)) {
+            return new YahooLeagueProbeResponse(false, null, null, null,
+                    "resource must be one of " + new TreeSet<>(YahooFantasyClient.LEAGUE_RESOURCES.keySet()));
+        }
+        String accessToken;
+        try {
+            accessToken = oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID);
+        } catch (RuntimeException e) {
+            return new YahooLeagueProbeResponse(false, null, null, null,
+                    "No usable service-account token: " + e.getMessage());
+        }
+        Attempt attempt = client.attemptLeagueResource(accessToken, leagueKey, resource);
+        if (!attempt.ok()) {
+            return new YahooLeagueProbeResponse(false, attempt.path(), attempt.status(), null, describe(attempt));
+        }
+        return new YahooLeagueProbeResponse(true, attempt.path(), attempt.status(), attempt.body(), null);
     }
 
     /**

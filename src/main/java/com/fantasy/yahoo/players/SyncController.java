@@ -3,6 +3,7 @@ package com.fantasy.yahoo.players;
 import com.fantasy.yahoo.exception.ErrorDto;
 import com.fantasy.yahoo.players.dto.SyncAcceptedResponse;
 import com.fantasy.yahoo.players.dto.SyncRunResponse;
+import com.fantasy.yahoo.players.dto.YahooLeagueProbeResponse;
 import com.fantasy.yahoo.players.dto.YahooProbeResponse;
 import com.fantasy.yahoo.league.YahooLeagueService;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
@@ -13,6 +14,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -77,6 +79,19 @@ public class SyncController {
             @RequestParam(required = false) String leagueKey,
             @RequestParam(required = false) String target) {
         return probeService.probe(gameKey, season, leagueKey, target);
+    }
+
+    @Operation(summary = "Read one of a league's resources raw",
+            description = "What Yahoo sends for a league's settings, teams, draftresults, or the three "
+                    + "together (draft), verbatim, read with the service account's token, so only a "
+                    + "league that account belongs to answers. For checking which fields Yahoo really "
+                    + "fills before code relies on them.")
+    @ApiResponse(responseCode = "200", description = "What Yahoo answered, refusal included")
+    @GetMapping("/probe/league")
+    public YahooLeagueProbeResponse probeLeague(
+            @RequestParam @Size(max = 64) String leagueKey,
+            @RequestParam @Size(max = 32) String resource) {
+        return probeService.probeLeague(leagueKey, resource);
     }
 
     @Operation(summary = "The service account's own leagues",

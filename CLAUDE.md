@@ -143,6 +143,10 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   difference is the diagnosis. `target=leagues` asks the floor question — can the account list
   its own leagues at all? — since a refusal there means no route into the Fantasy API is open
   and the question stops being which endpoint to use.
+  `GET /api/v1/sync/probe/league?leagueKey=&resource=` hands back one of a league's resources
+  (`settings`, `teams`, `draftresults`, or `draft` for the three together) exactly as Yahoo sent
+  it, read with the service account's token, so a field can be seen to exist before code relies
+  on it.
   `GET /api/v1/sync/leagues` lists the service account's own leagues
   with their keys, which both saves hunting for one and doubles as a test: if it succeeds while a
   game probe is refused, the account and its permission are fine. Neither reads into the cache nor
