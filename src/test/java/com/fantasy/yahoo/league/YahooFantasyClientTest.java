@@ -65,11 +65,11 @@ class YahooFantasyClientTest {
     }
 
     @Test
-    void getLeagueTeams_urlEncodesTheLeagueKey() {
-        server.expect(requestTo(containsString("/league/453.l.1%2F..%2Fsecret/teams")))
+    void getLeagueDraft_urlEncodesTheLeagueKey() {
+        server.expect(requestTo(containsString("/league/453.l.1%2F..%2Fsecret;out=settings,draftresults,teams")))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
-        client.getLeagueTeams("tok", "453.l.1/../secret");
+        client.getLeagueDraft("tok", "453.l.1/../secret");
 
         server.verify();
     }
@@ -100,10 +100,10 @@ class YahooFantasyClientTest {
 
     @Test
     void aForbiddenWithoutYahoosErrorShape_isStillARefusal() {
-        server.expect(requestTo(containsString("/league/453.l.123/teams")))
+        server.expect(requestTo(containsString("/league/453.l.123/settings")))
                 .andRespond(withStatus(HttpStatus.FORBIDDEN).body("<html>nope</html>"));
 
-        assertThatThrownBy(() -> client.getLeagueTeams("tok", "453.l.123"))
+        assertThatThrownBy(() -> client.getLeagueSettings("tok", "453.l.123"))
                 .isInstanceOf(YahooAccessDeniedException.class)
                 .hasMessage("Yahoo refused the request");
     }
