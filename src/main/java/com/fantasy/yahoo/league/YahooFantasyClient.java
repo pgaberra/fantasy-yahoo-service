@@ -63,9 +63,13 @@ public class YahooFantasyClient {
                 leagueKey);
     }
 
-    /** A league's metadata (which carries the signed-in manager's {@code draft_position}) and its teams. */
+    /**
+     * A league's metadata (which carries the signed-in manager's {@code draft_position}), its draft
+     * results and its teams. The results are what name a seat once a commissioner has set the order:
+     * Yahoo lists the first round's slots there while the metadata's own position can stay unset.
+     */
     public JsonNode getLeagueTeams(String accessToken, String leagueKey) {
-        return get(accessToken, "/league/{leagueKey};out=teams?format=json", leagueKey);
+        return get(accessToken, "/league/{leagueKey};out=draftresults,teams?format=json", leagueKey);
     }
 
     /**

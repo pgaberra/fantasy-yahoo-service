@@ -78,19 +78,41 @@ public class YahooLeagueService {
     }
 
     /**
-     * The league's teams with the signed-in manager's own team at its draft position, which is all a
-     * draft setup reads: the league's size and the manager's seat. Yahoo tells no other team's seat
-     * before its draft starts, so the others stay in Yahoo's order.
+     * The league's teams and the manager's own seat in its draft, which is all a draft setup reads:
+     * the league's size and where the manager picks. The seat is null when Yahoo names it nowhere,
+     * so a setup can ask rather than present a guess as the league's order.
      */
     public LeagueTeamsResponse teams(String appUserId, String leagueKey) {
         JsonNode root = client.getLeagueTeams(oauthService.validAccessToken(appUserId), leagueKey);
         JsonNode leagueArray = root.path("fantasy_content").path("league");
-        List<LeagueTeam> teams = withOwnTeamAt(
-                        parseDraftTeams(subresource(leagueArray, "teams")), ownDraftPosition(leagueArray.path(0)))
-                .stream()
+        List<LeagueDraftPick> picks = parseDraftPicks(subresource(leagueArray, "draft_results"));
+        Integer fromMetadata = ownDraftPosition(leagueArray.path(0));
+        List<LeagueDraftTeam> ordered =
+                inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks, fromMetadata);
+        List<LeagueTeam> teams = ordered.stream()
                 .map(team -> new LeagueTeam(team.name(), team.mine()))
                 .toList();
-        return new LeagueTeamsResponse(teams);
+        return new LeagueTeamsResponse(teams, ownSeat(ordered, picks, fromMetadata));
+    }
+
+    /**
+     * The manager's seat when Yahoo names it: the slot its team holds in the first round, else the
+     * seat the league's metadata carries. Null when Yahoo gives neither — the teams then sit in
+     * Yahoo's own order, which says nothing about who picks when.
+     */
+    private static Integer ownSeat(
+            List<LeagueDraftTeam> ordered, List<LeagueDraftPick> picks, Integer fromMetadata) {
+        LeagueDraftTeam own =
+                ordered.stream().filter(LeagueDraftTeam::mine).findFirst().orElse(null);
+        if (own == null) {
+            return fromMetadata;
+        }
+        boolean slotted = picks.stream()
+                .anyMatch(pick -> pick.round() == 1 && own.teamKey().equals(pick.teamKey()));
+        if (slotted) {
+            return ordered.indexOf(own) + 1;
+        }
+        return fromMetadata;
     }
 
     public LeagueDraftResponse draft(String appUserId, String leagueKey) {
