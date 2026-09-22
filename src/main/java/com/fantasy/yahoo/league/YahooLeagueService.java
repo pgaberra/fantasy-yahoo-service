@@ -78,9 +78,9 @@ public class YahooLeagueService {
     }
 
     /**
-     * The league's teams in draft order. Read through the draft rather than {@code /teams}, whose
-     * order is Yahoo's team ids: once the order is set, even before the draft starts, the draft
-     * results list every slot with the team that holds it, and that is the order a draft setup needs.
+     * The league's teams in draft order, which a draft setup needs; Yahoo's {@code /teams} lists
+     * them by team id. The order comes from the draft results where Yahoo lists the slots, and from
+     * each team's {@code draft_position} where it does not yet (see {@link #inDraftOrder}).
      */
     public LeagueTeamsResponse teams(String appUserId, String leagueKey) {
         JsonNode root = client.getLeagueDraft(oauthService.validAccessToken(appUserId), leagueKey);
@@ -150,12 +150,17 @@ public class YahooLeagueService {
         return picks;
     }
 
-    private static List<LeagueDraftTeam> parseDraftTeams(JsonNode teamsNode) {
-        List<LeagueDraftTeam> teams = new ArrayList<>();
+    /** A team as Yahoo lists it, with its seat in the draft order when the commissioner has set one. */
+    private record ParsedTeam(LeagueDraftTeam team, Integer draftPosition) {
+    }
+
+    private static List<ParsedTeam> parseDraftTeams(JsonNode teamsNode) {
+        List<ParsedTeam> teams = new ArrayList<>();
         for (JsonNode entry : numericChildren(teamsNode)) {
             String teamKey = null;
             String name = null;
             boolean mine = false;
+            Integer draftPosition = null;
             for (JsonNode attribute : entry.path("team").path(0)) {
                 if (attribute.hasNonNull("team_key")) {
                     teamKey = attribute.get("team_key").asText();
@@ -166,29 +171,41 @@ public class YahooLeagueService {
                 if (attribute.hasNonNull("is_owned_by_current_login")) {
                     mine = attribute.get("is_owned_by_current_login").asInt(0) == 1;
                 }
+                if (attribute.hasNonNull("draft_position")) {
+                    int position = attribute.get("draft_position").asInt(0);
+                    draftPosition = position > 0 ? position : null;
+                }
             }
             if (teamKey != null && name != null) {
-                teams.add(new LeagueDraftTeam(teamKey, name, mine));
+                teams.add(new ParsedTeam(new LeagueDraftTeam(teamKey, name, mine), draftPosition));
             }
         }
         return teams;
     }
 
-    /** Teams in the order they pick in the first round; any team without a first-round pick follows. */
-    private static List<LeagueDraftTeam> inDraftOrder(List<LeagueDraftTeam> teams, List<LeagueDraftPick> picks) {
-        Map<String, LeagueDraftTeam> remaining = new LinkedHashMap<>();
-        teams.forEach(team -> remaining.put(team.teamKey(), team));
+    /**
+     * Teams in the order they pick in the first round. Yahoo lists the draft's slots only once the
+     * draft is under way in some leagues, so before that each team's {@code draft_position} gives
+     * the order the commissioner set. Any team placed by neither follows in Yahoo's order.
+     */
+    private static List<LeagueDraftTeam> inDraftOrder(List<ParsedTeam> teams, List<LeagueDraftPick> picks) {
+        Map<String, ParsedTeam> remaining = new LinkedHashMap<>();
+        teams.forEach(parsed -> remaining.put(parsed.team().teamKey(), parsed));
         List<LeagueDraftTeam> ordered = new ArrayList<>();
         for (LeagueDraftPick pick : picks) {
             if (pick.round() != 1) {
                 continue;
             }
-            LeagueDraftTeam team = remaining.remove(pick.teamKey());
-            if (team != null) {
-                ordered.add(team);
+            ParsedTeam parsed = remaining.remove(pick.teamKey());
+            if (parsed != null) {
+                ordered.add(parsed.team());
             }
         }
-        ordered.addAll(remaining.values());
+        remaining.values().stream()
+                .sorted(Comparator.comparing(ParsedTeam::draftPosition,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(ParsedTeam::team)
+                .forEach(ordered::add);
         return ordered;
     }
 

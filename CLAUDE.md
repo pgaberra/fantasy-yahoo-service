@@ -80,9 +80,10 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   - `YahooLeagueService` — parses that JSON defensively into clean DTOs; gets a valid
     access token from `YahooOAuthService` (refreshing as needed).
   - `YahooLeagueController` — `GET /api/v1/yahoo/leagues`, `…/leagues/{leagueKey}/settings`,
-    `…/teams`, `…/draft` and `…/free-agents`. **Teams** are read through the draft results, so a
-    draft setup gets them in draft order as soon as the commissioner has set it (Yahoo's `/teams`
-    lists them by team id). **Free agents** are the players the league has
+    `…/teams`, `…/draft` and `…/free-agents`. **Teams** come in draft order, so a draft setup gets the
+    order the commissioner set (Yahoo's `/teams` lists them by team id): from the draft results'
+    first round where Yahoo lists the slots, and from each team's `draft_position` where it does
+    not, as in a league whose teams are finalized but whose draft has not started. **Free agents** are the players the league has
     available, free agents and waivers together (Yahoo's `status=A`), in Yahoo's actual-rank order
     so the first rows are the best available and a `limit` trims the tail rather than a slice;
     `availability` tells the two apart from the `ownership` subresource, and is `UNKNOWN` rather
