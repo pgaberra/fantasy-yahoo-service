@@ -78,16 +78,15 @@ public class YahooLeagueService {
     }
 
     /**
-     * The league's teams in draft order, as far as Yahoo tells it, which a draft setup needs; Yahoo's
-     * {@code /teams} lists them by team id. See {@link #inDraftOrder} for what Yahoo does and does not
-     * tell before a draft starts.
+     * The league's teams with the signed-in manager's own team at its draft position, which is all a
+     * draft setup reads: the league's size and the manager's seat. Yahoo tells no other team's seat
+     * before its draft starts, so the others stay in Yahoo's order.
      */
     public LeagueTeamsResponse teams(String appUserId, String leagueKey) {
-        JsonNode root = client.getLeagueDraft(oauthService.validAccessToken(appUserId), leagueKey);
+        JsonNode root = client.getLeagueTeams(oauthService.validAccessToken(appUserId), leagueKey);
         JsonNode leagueArray = root.path("fantasy_content").path("league");
-        List<LeagueDraftPick> picks = parseDraftPicks(subresource(leagueArray, "draft_results"));
-        List<LeagueTeam> teams = inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks,
-                        ownDraftPosition(leagueArray.path(0)))
+        List<LeagueTeam> teams = withOwnTeamAt(
+                        parseDraftTeams(subresource(leagueArray, "teams")), ownDraftPosition(leagueArray.path(0)))
                 .stream()
                 .map(team -> new LeagueTeam(team.name(), team.mine()))
                 .toList();
@@ -183,11 +182,8 @@ public class YahooLeagueService {
     }
 
     /**
-     * Teams in the order they pick in the first round, where Yahoo lists the draft's slots. Before
-     * a draft starts it may list none (seen in an autodraft league with teams finalized), and then
-     * the only seat it tells is the signed-in manager's own, as the league's {@code draft_position}:
-     * no team carries its own. That seat is kept and the other teams fill the rest in Yahoo's order,
-     * so at least the manager's own picks fall where they will.
+     * Teams in the order they pick in the first round, where Yahoo lists the draft's slots. Before a
+     * draft starts it may list none, and then only the manager's own seat is known.
      */
     private static List<LeagueDraftTeam> inDraftOrder(
             List<LeagueDraftTeam> teams, List<LeagueDraftPick> picks, Integer ownDraftPosition) {
@@ -195,25 +191,27 @@ public class YahooLeagueService {
         teams.forEach(team -> remaining.put(team.teamKey(), team));
         List<LeagueDraftTeam> ordered = new ArrayList<>();
         for (LeagueDraftPick pick : picks) {
-            if (pick.round() != 1) {
-                continue;
-            }
-            LeagueDraftTeam team = remaining.remove(pick.teamKey());
+            LeagueDraftTeam team = pick.round() == 1 ? remaining.remove(pick.teamKey()) : null;
             if (team != null) {
                 ordered.add(team);
             }
         }
-        if (!ordered.isEmpty() || ownDraftPosition == null) {
-            ordered.addAll(remaining.values());
-            return ordered;
+        if (ordered.isEmpty()) {
+            return withOwnTeamAt(teams, ownDraftPosition);
         }
-        List<LeagueDraftTeam> others = new ArrayList<>(remaining.values());
-        LeagueDraftTeam own = others.stream().filter(LeagueDraftTeam::mine).findFirst().orElse(null);
-        if (own == null) {
-            return others;
+        ordered.addAll(remaining.values());
+        return ordered;
+    }
+
+    /** The teams with the manager's own moved to the given seat, the others keeping their order. */
+    private static List<LeagueDraftTeam> withOwnTeamAt(List<LeagueDraftTeam> teams, Integer position) {
+        LeagueDraftTeam own = teams.stream().filter(LeagueDraftTeam::mine).findFirst().orElse(null);
+        if (own == null || position == null) {
+            return teams;
         }
+        List<LeagueDraftTeam> others = new ArrayList<>(teams);
         others.remove(own);
-        others.add(Math.min(ownDraftPosition, others.size() + 1) - 1, own);
+        others.add(Math.min(position, others.size() + 1) - 1, own);
         return others;
     }
 

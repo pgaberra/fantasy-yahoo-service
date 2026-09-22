@@ -65,6 +65,16 @@ class YahooFantasyClientTest {
     }
 
     @Test
+    void getLeagueTeams_urlEncodesTheLeagueKey() {
+        server.expect(requestTo(containsString("/league/453.l.1%2F..%2Fsecret;out=teams")))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        client.getLeagueTeams("tok", "453.l.1/../secret");
+
+        server.verify();
+    }
+
+    @Test
     void getLeagueDraft_urlEncodesTheLeagueKey() {
         server.expect(requestTo(containsString("/league/453.l.1%2F..%2Fsecret;out=settings,draftresults,teams")))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
