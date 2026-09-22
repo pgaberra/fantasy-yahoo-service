@@ -63,6 +63,11 @@ public class YahooFantasyClient {
                 leagueKey);
     }
 
+    /** A league's metadata (which carries the signed-in manager's {@code draft_position}) and its teams. */
+    public JsonNode getLeagueTeams(String accessToken, String leagueKey) {
+        return get(accessToken, "/league/{leagueKey};out=teams?format=json", leagueKey);
+    }
+
     /**
      * A league's draft in one call: its metadata (which carries {@code draft_status}), settings,
      * draft results and teams.
