@@ -83,15 +83,18 @@ public class SyncController {
 
     @Operation(summary = "Read one of a league's resources raw",
             description = "What Yahoo sends for a league's settings, teams, draftresults, or the three "
-                    + "together (draft), verbatim, read with the service account's token, so only a "
-                    + "league that account belongs to answers. For checking which fields Yahoo really "
-                    + "fills before code relies on them.")
+                    + "together (draft), verbatim. Read with the service account's token, so only a "
+                    + "league that account belongs to answers — or, with an appUserId, with that "
+                    + "user's own token, which is the only way to read a real league the service "
+                    + "account is not in. For checking which fields Yahoo really fills before code "
+                    + "relies on them.")
     @ApiResponse(responseCode = "200", description = "What Yahoo answered, refusal included")
     @GetMapping("/probe/league")
     public YahooLeagueProbeResponse probeLeague(
             @RequestParam @Size(max = 64) String leagueKey,
-            @RequestParam @Size(max = 32) String resource) {
-        return probeService.probeLeague(leagueKey, resource);
+            @RequestParam @Size(max = 32) String resource,
+            @RequestParam(required = false) @Size(max = 64) String appUserId) {
+        return probeService.probeLeague(leagueKey, resource, appUserId);
     }
 
     @Operation(summary = "The service account's own leagues",

@@ -180,16 +180,41 @@ class YahooProbeServiceTest {
                 new Attempt("/league/477.l.1/teams", 200, "{\"fantasy_content\":{}}", null));
 
         YahooLeagueProbeResponse response =
-                new YahooProbeService(oauthService, client).probeLeague("477.l.1", "teams");
+                new YahooProbeService(oauthService, client).probeLeague("477.l.1", "teams", null);
 
         assertThat(response.ok()).isTrue();
         assertThat(response.body()).isEqualTo("{\"fantasy_content\":{}}");
     }
 
     @Test
+    void readsALeagueResourceRawWithAGivenUsersToken() {
+        when(oauthService.validAccessToken("user-7")).thenReturn("user-token");
+        when(client.attemptLeagueResource("user-token", "477.l.124453", "draft")).thenReturn(
+                new Attempt("/league/477.l.124453;out=settings,draftresults,teams", 200, "{\"a\":1}", null));
+
+        YahooLeagueProbeResponse response = new YahooProbeService(oauthService, client)
+                .probeLeague("477.l.124453", "draft", "user-7");
+
+        assertThat(response.ok()).isTrue();
+        assertThat(response.body()).isEqualTo("{\"a\":1}");
+        verify(oauthService, never()).validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID);
+    }
+
+    @Test
+    void saysWhoseTokenWasMissingWhenReadingAsAUser() {
+        when(oauthService.validAccessToken("user-7")).thenThrow(new IllegalStateException("not connected"));
+
+        YahooLeagueProbeResponse response = new YahooProbeService(oauthService, client)
+                .probeLeague("477.l.1", "teams", "user-7");
+
+        assertThat(response.ok()).isFalse();
+        assertThat(response.error()).startsWith("No usable token for that user:");
+    }
+
+    @Test
     void refusesAResourceOutsideTheListWithoutCallingYahoo() {
-        YahooLeagueProbeResponse response =
-                new YahooProbeService(oauthService, client).probeLeague("477.l.1", "players;out=../x");
+        YahooLeagueProbeResponse response = new YahooProbeService(oauthService, client)
+                .probeLeague("477.l.1", "players;out=../x", null);
 
         assertThat(response.ok()).isFalse();
         assertThat(response.error()).startsWith("resource must be one of");
