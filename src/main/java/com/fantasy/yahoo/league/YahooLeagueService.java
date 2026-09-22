@@ -78,15 +78,16 @@ public class YahooLeagueService {
     }
 
     /**
-     * The league's teams in draft order, which a draft setup needs; Yahoo's {@code /teams} lists
-     * them by team id. The order comes from the draft results where Yahoo lists the slots, and from
-     * each team's {@code draft_position} where it does not yet (see {@link #inDraftOrder}).
+     * The league's teams in draft order, as far as Yahoo tells it, which a draft setup needs; Yahoo's
+     * {@code /teams} lists them by team id. See {@link #inDraftOrder} for what Yahoo does and does not
+     * tell before a draft starts.
      */
     public LeagueTeamsResponse teams(String appUserId, String leagueKey) {
         JsonNode root = client.getLeagueDraft(oauthService.validAccessToken(appUserId), leagueKey);
         JsonNode leagueArray = root.path("fantasy_content").path("league");
         List<LeagueDraftPick> picks = parseDraftPicks(subresource(leagueArray, "draft_results"));
-        List<LeagueTeam> teams = inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks)
+        List<LeagueTeam> teams = inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks,
+                        ownDraftPosition(leagueArray.path(0)))
                 .stream()
                 .map(team -> new LeagueTeam(team.name(), team.mine()))
                 .toList();
@@ -99,7 +100,8 @@ public class YahooLeagueService {
         JsonNode meta = leagueArray.path(0);
 
         List<LeagueDraftPick> picks = parseDraftPicks(subresource(leagueArray, "draft_results"));
-        List<LeagueDraftTeam> teams = inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks);
+        List<LeagueDraftTeam> teams =
+                inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks, ownDraftPosition(meta));
         JsonNode settings = subresource(leagueArray, "settings").path(0);
 
         return new LeagueDraftResponse(
@@ -150,17 +152,18 @@ public class YahooLeagueService {
         return picks;
     }
 
-    /** A team as Yahoo lists it, with its seat in the draft order when the commissioner has set one. */
-    private record ParsedTeam(LeagueDraftTeam team, Integer draftPosition) {
+    /** The signed-in manager's own seat in the draft order, from the league's metadata; null when unset. */
+    private static Integer ownDraftPosition(JsonNode meta) {
+        int position = meta.path("draft_position").asInt(0);
+        return position > 0 ? position : null;
     }
 
-    private static List<ParsedTeam> parseDraftTeams(JsonNode teamsNode) {
-        List<ParsedTeam> teams = new ArrayList<>();
+    private static List<LeagueDraftTeam> parseDraftTeams(JsonNode teamsNode) {
+        List<LeagueDraftTeam> teams = new ArrayList<>();
         for (JsonNode entry : numericChildren(teamsNode)) {
             String teamKey = null;
             String name = null;
             boolean mine = false;
-            Integer draftPosition = null;
             for (JsonNode attribute : entry.path("team").path(0)) {
                 if (attribute.hasNonNull("team_key")) {
                     teamKey = attribute.get("team_key").asText();
@@ -171,42 +174,47 @@ public class YahooLeagueService {
                 if (attribute.hasNonNull("is_owned_by_current_login")) {
                     mine = attribute.get("is_owned_by_current_login").asInt(0) == 1;
                 }
-                if (attribute.hasNonNull("draft_position")) {
-                    int position = attribute.get("draft_position").asInt(0);
-                    draftPosition = position > 0 ? position : null;
-                }
             }
             if (teamKey != null && name != null) {
-                teams.add(new ParsedTeam(new LeagueDraftTeam(teamKey, name, mine), draftPosition));
+                teams.add(new LeagueDraftTeam(teamKey, name, mine));
             }
         }
         return teams;
     }
 
     /**
-     * Teams in the order they pick in the first round. Yahoo lists the draft's slots only once the
-     * draft is under way in some leagues, so before that each team's {@code draft_position} gives
-     * the order the commissioner set. Any team placed by neither follows in Yahoo's order.
+     * Teams in the order they pick in the first round, where Yahoo lists the draft's slots. Before
+     * a draft starts it may list none (seen in an autodraft league with teams finalized), and then
+     * the only seat it tells is the signed-in manager's own, as the league's {@code draft_position}:
+     * no team carries its own. That seat is kept and the other teams fill the rest in Yahoo's order,
+     * so at least the manager's own picks fall where they will.
      */
-    private static List<LeagueDraftTeam> inDraftOrder(List<ParsedTeam> teams, List<LeagueDraftPick> picks) {
-        Map<String, ParsedTeam> remaining = new LinkedHashMap<>();
-        teams.forEach(parsed -> remaining.put(parsed.team().teamKey(), parsed));
+    private static List<LeagueDraftTeam> inDraftOrder(
+            List<LeagueDraftTeam> teams, List<LeagueDraftPick> picks, Integer ownDraftPosition) {
+        Map<String, LeagueDraftTeam> remaining = new LinkedHashMap<>();
+        teams.forEach(team -> remaining.put(team.teamKey(), team));
         List<LeagueDraftTeam> ordered = new ArrayList<>();
         for (LeagueDraftPick pick : picks) {
             if (pick.round() != 1) {
                 continue;
             }
-            ParsedTeam parsed = remaining.remove(pick.teamKey());
-            if (parsed != null) {
-                ordered.add(parsed.team());
+            LeagueDraftTeam team = remaining.remove(pick.teamKey());
+            if (team != null) {
+                ordered.add(team);
             }
         }
-        remaining.values().stream()
-                .sorted(Comparator.comparing(ParsedTeam::draftPosition,
-                        Comparator.nullsLast(Comparator.naturalOrder())))
-                .map(ParsedTeam::team)
-                .forEach(ordered::add);
-        return ordered;
+        if (!ordered.isEmpty() || ownDraftPosition == null) {
+            ordered.addAll(remaining.values());
+            return ordered;
+        }
+        List<LeagueDraftTeam> others = new ArrayList<>(remaining.values());
+        LeagueDraftTeam own = others.stream().filter(LeagueDraftTeam::mine).findFirst().orElse(null);
+        if (own == null) {
+            return others;
+        }
+        others.remove(own);
+        others.add(Math.min(ownDraftPosition, others.size() + 1) - 1, own);
+        return others;
     }
 
     /** A draft result is an object, or an array of single-key objects; either way, one object. */
