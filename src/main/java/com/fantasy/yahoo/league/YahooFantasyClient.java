@@ -6,6 +6,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpHeaders;
+
+import java.util.Map;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -141,6 +143,26 @@ public class YahooFantasyClient {
      */
     public Attempt attemptUserLeagues(String accessToken) {
         return attempt(accessToken, USER_LEAGUES_PATH, USER_LEAGUES_PATH);
+    }
+
+    /** The league resources {@link #attemptLeagueResource} may ask for, by the name a caller uses. */
+    public static final Map<String, String> LEAGUE_RESOURCES = Map.of(
+            "settings", "/settings",
+            "teams", "/teams",
+            "draftresults", "/draftresults",
+            "draft", ";out=settings,draftresults,teams");
+
+    /**
+     * One of a league's resources, raw. For diagnosing what Yahoo actually sends before code is
+     * written against it: a field that is absent from the answer cannot be parsed into existence.
+     */
+    public Attempt attemptLeagueResource(String accessToken, String leagueKey, String resource) {
+        String suffix = LEAGUE_RESOURCES.get(resource);
+        if (suffix == null) {
+            throw new IllegalArgumentException("Unknown league resource");
+        }
+        return attempt(accessToken, "/league/{leagueKey}" + suffix + "?format=json",
+                "/league/" + leagueKey + suffix, leagueKey);
     }
 
     private Attempt attempt(String accessToken, String uriTemplate, String display, Object... vars) {
