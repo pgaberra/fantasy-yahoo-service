@@ -95,6 +95,9 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
     Yahoo call
     (`/league/{key};out=settings,draftresults,teams`): its status, the teams in first-round
     order and every pick Yahoo lists, which the BFF polls while a user follows a live draft.
+    `orderKnown` says whether that order was read: it is true only when every team holds a
+    first-round slot of its own, and otherwise the teams are in Yahoo's own order, from which no
+    seat may be read.
   - `dto/` — `LeaguesResponse`/`LeagueSummary`, `LeagueSettingsResponse` (+ `StatCategory`,
     `RosterSlot`).
 - `config/` — `OpenApiConfig` (pins server URL to `/`), `YahooOAuthProperties`

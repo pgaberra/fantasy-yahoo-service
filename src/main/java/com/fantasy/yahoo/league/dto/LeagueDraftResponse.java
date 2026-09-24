@@ -13,8 +13,14 @@ public record LeagueDraftResponse(
         boolean auction,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                 description = "The league's teams in first-round draft order once Yahoo has set it, "
-                        + "otherwise in Yahoo's team order.")
+                        + "otherwise in Yahoo's team order; `orderKnown` says which.")
         List<LeagueDraftTeam> teams,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
+                description = "True when `teams` is the draft order, each team placed by a first-round "
+                        + "slot of its own. False before Yahoo lists those slots (for a live draft, until "
+                        + "it runs) or while a team holds none: a team's place in the list then says "
+                        + "nothing about when it picks, so no seat may be read from it.")
+        boolean orderKnown,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED,
                 description = "Every pick Yahoo lists, by overall pick number. Before the draft this can hold "
                         + "the order's slots without players, or nothing at all.")
