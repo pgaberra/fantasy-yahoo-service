@@ -87,7 +87,7 @@ public class YahooLeagueService {
         JsonNode leagueArray = root.path("fantasy_content").path("league");
         List<LeagueDraftPick> picks = parseDraftPicks(subresource(leagueArray, "draft_results"));
         List<LeagueDraftTeam> ordered =
-                inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks);
+                inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks).teams();
         List<LeagueTeam> teams = ordered.stream()
                 .map(team -> new LeagueTeam(team.name(), team.mine()))
                 .toList();
@@ -121,15 +121,15 @@ public class YahooLeagueService {
         JsonNode meta = leagueArray.path(0);
 
         List<LeagueDraftPick> picks = parseDraftPicks(subresource(leagueArray, "draft_results"));
-        List<LeagueDraftTeam> teams =
-                inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks);
+        DraftOrder order = inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks);
         JsonNode settings = subresource(leagueArray, "settings").path(0);
 
         return new LeagueDraftResponse(
                 firstNonBlank(text(meta, "league_key"), leagueKey),
                 draftStatus(text(meta, "draft_status")),
                 settings.path("is_auction_draft").asInt(0) == 1,
-                teams,
+                order.teams(),
+                order.known(),
                 picks);
     }
 
@@ -198,11 +198,20 @@ public class YahooLeagueService {
     }
 
     /**
+     * The teams, and whether their order is the draft's.
+     *
+     * @param known true only when every team was placed by a first-round slot of its own; a team
+     *     without one (a league whose slots are not listed yet, or one that traded its first-round
+     *     pick away) sits where Yahoo happened to list it, and its place says nothing
+     */
+    private record DraftOrder(List<LeagueDraftTeam> teams, boolean known) {
+    }
+
+    /**
      * Teams in the order they pick in the first round, where Yahoo lists the draft's slots. Before a
      * draft starts it lists none, and the teams keep Yahoo's own order, which is not a draft order.
      */
-    private static List<LeagueDraftTeam> inDraftOrder(
-            List<LeagueDraftTeam> teams, List<LeagueDraftPick> picks) {
+    private static DraftOrder inDraftOrder(List<LeagueDraftTeam> teams, List<LeagueDraftPick> picks) {
         Map<String, LeagueDraftTeam> remaining = new LinkedHashMap<>();
         teams.forEach(team -> remaining.put(team.teamKey(), team));
         List<LeagueDraftTeam> ordered = new ArrayList<>();
@@ -213,10 +222,11 @@ public class YahooLeagueService {
             }
         }
         if (ordered.isEmpty()) {
-            return teams;
+            return new DraftOrder(teams, false);
         }
+        boolean known = remaining.isEmpty();
         ordered.addAll(remaining.values());
-        return ordered;
+        return new DraftOrder(ordered, known);
     }
 
     /** A draft result is an object, or an array of single-key objects; either way, one object. */

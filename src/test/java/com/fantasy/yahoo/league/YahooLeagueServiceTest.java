@@ -181,8 +181,10 @@ class YahooLeagueServiceTest {
         assertThat(teams.draftPosition()).isNull();
         assertThat(teams.teams()).extracting("name")
                 .containsExactly("Alexander", "Theo", "Albin", "Andreas");
-        assertThat(service().draft(USER, "477.l.1").teams()).extracting("teamKey")
+        LeagueDraftResponse draft = service().draft(USER, "477.l.1");
+        assertThat(draft.teams()).extracting("teamKey")
                 .containsExactly("477.l.1.t.1", "477.l.1.t.2", "477.l.1.t.3", "477.l.1.t.4");
+        assertThat(draft.orderKnown()).isFalse();
     }
 
     @Test
@@ -207,6 +209,7 @@ class YahooLeagueServiceTest {
         assertThat(draft.status()).isEqualTo(DraftStatus.IN_PROGRESS);
         assertThat(draft.auction()).isFalse();
         assertThat(draft.teams()).extracting("teamKey").containsExactly("465.l.9.t.2", "465.l.9.t.1");
+        assertThat(draft.orderKnown()).isTrue();
         assertThat(draft.teams().get(1).mine()).isTrue();
         assertThat(draft.picks()).hasSize(3);
         assertThat(draft.picks().getFirst().playerKey()).isEqualTo("465.p.6743");
@@ -232,7 +235,62 @@ class YahooLeagueServiceTest {
         assertThat(draft.status()).isEqualTo(DraftStatus.PRE_DRAFT);
         assertThat(draft.auction()).isTrue();
         assertThat(draft.teams()).extracting("teamKey").containsExactly("465.l.9.t.1", "465.l.9.t.2");
+        assertThat(draft.orderKnown()).isFalse();
         assertThat(draft.picks()).isEmpty();
+    }
+
+    @Test
+    void draft_knowsTheOrderFromSlotsListedBeforeAnyPick() throws Exception {
+        when(oauthService.validAccessToken(USER)).thenReturn("token");
+        when(client.getLeagueDraft("token", "465.l.9")).thenReturn(json(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\",\"draft_status\":\"predraft\"},"
+                + "{\"settings\":[{\"is_auction_draft\":\"0\"}]},"
+                + "{\"draft_results\":{"
+                + "\"0\":{\"draft_result\":{\"pick\":1,\"round\":1,\"team_key\":\"465.l.9.t.3\"}},"
+                + "\"1\":{\"draft_result\":{\"pick\":2,\"round\":1,\"team_key\":\"465.l.9.t.1\"}},"
+                + "\"2\":{\"draft_result\":{\"pick\":3,\"round\":1,\"team_key\":\"465.l.9.t.2\"}},"
+                + "\"3\":{\"draft_result\":{\"pick\":4,\"round\":2,\"team_key\":\"465.l.9.t.2\"}},"
+                + "\"count\":4}},"
+                + "{\"teams\":{"
+                + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"name\":\"Alpha\"},{\"is_owned_by_current_login\":1}]]},"
+                + "\"1\":{\"team\":[[{\"team_key\":\"465.l.9.t.2\"},{\"name\":\"Bravo\"}]]},"
+                + "\"2\":{\"team\":[[{\"team_key\":\"465.l.9.t.3\"},{\"name\":\"Charlie\"}]]},"
+                + "\"count\":3}}]}}"));
+
+        LeagueDraftResponse draft = service().draft(USER, "465.l.9");
+
+        assertThat(draft.teams()).extracting("teamKey")
+                .containsExactly("465.l.9.t.3", "465.l.9.t.1", "465.l.9.t.2");
+        assertThat(draft.orderKnown()).isTrue();
+        assertThat(draft.picks()).extracting("playerId").containsOnlyNulls();
+    }
+
+    /**
+     * A team that traded its first-round pick away holds no first-round slot, so it can only be put
+     * where Yahoo listed it, and the other teams' places are counted past a team picking twice.
+     */
+    @Test
+    void draft_doesNotClaimTheOrderWhenATeamHasNoFirstRoundSlot() throws Exception {
+        when(oauthService.validAccessToken(USER)).thenReturn("token");
+        when(client.getLeagueDraft("token", "465.l.9")).thenReturn(json(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\",\"draft_status\":\"predraft\"},"
+                + "{\"settings\":[{\"is_auction_draft\":\"0\"}]},"
+                + "{\"draft_results\":{"
+                + "\"0\":{\"draft_result\":{\"pick\":1,\"round\":1,\"team_key\":\"465.l.9.t.3\"}},"
+                + "\"1\":{\"draft_result\":{\"pick\":2,\"round\":1,\"team_key\":\"465.l.9.t.3\"}},"
+                + "\"2\":{\"draft_result\":{\"pick\":3,\"round\":1,\"team_key\":\"465.l.9.t.1\"}},"
+                + "\"count\":3}},"
+                + "{\"teams\":{"
+                + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"name\":\"Alpha\"},{\"is_owned_by_current_login\":1}]]},"
+                + "\"1\":{\"team\":[[{\"team_key\":\"465.l.9.t.2\"},{\"name\":\"Bravo\"}]]},"
+                + "\"2\":{\"team\":[[{\"team_key\":\"465.l.9.t.3\"},{\"name\":\"Charlie\"}]]},"
+                + "\"count\":3}}]}}"));
+
+        LeagueDraftResponse draft = service().draft(USER, "465.l.9");
+
+        assertThat(draft.teams()).extracting("teamKey")
+                .containsExactly("465.l.9.t.3", "465.l.9.t.1", "465.l.9.t.2");
+        assertThat(draft.orderKnown()).isFalse();
     }
 
     @Test
