@@ -117,7 +117,7 @@ class YahooLeagueServiceTest {
                 + "\"2\":{\"draft_result\":{\"pick\":3,\"round\":1,\"team_key\":\"477.l.5.t.1\"}},"
                 + "\"count\":3}},"
                 + "{\"teams\":{"
-                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.5.t.1\"},{\"name\":\"Flata Kickers\"},"
+                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.5.t.1\"},{\"name\":\"Charlie\"},"
                 + "{\"is_owned_by_current_login\":1}]]},"
                 + "\"1\":{\"team\":[[{\"team_key\":\"477.l.5.t.2\"},{\"name\":\"Alpha\"}]]},"
                 + "\"2\":{\"team\":[[{\"team_key\":\"477.l.5.t.3\"},{\"name\":\"Bravo\"}]]},"
@@ -126,7 +126,7 @@ class YahooLeagueServiceTest {
         LeagueTeamsResponse response = service().teams(USER, "477.l.5");
 
         assertThat(response.draftPosition()).isEqualTo(3);
-        assertThat(response.teams()).extracting("name").containsExactly("Alpha", "Bravo", "Flata Kickers");
+        assertThat(response.teams()).extracting("name").containsExactly("Alpha", "Bravo", "Charlie");
     }
 
     @Test
@@ -161,26 +161,26 @@ class YahooLeagueServiceTest {
                 + "{\"settings\":[{\"is_auction_draft\":\"0\"}]},"
                 + "{\"draft_results\":[]},"
                 + "{\"teams\":{"
-                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.1.t.1\"},{\"name\":\"Alexander\"},{\"is_owned_by_current_login\":1}]]},"
-                + "\"1\":{\"team\":[[{\"team_key\":\"477.l.1.t.2\"},{\"name\":\"Theo\"}]]},"
-                + "\"2\":{\"team\":[[{\"team_key\":\"477.l.1.t.3\"},{\"name\":\"Albin\"}]]},"
-                + "\"3\":{\"team\":[[{\"team_key\":\"477.l.1.t.4\"},{\"name\":\"Andreas\"}]]},"
+                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.1.t.1\"},{\"name\":\"Alpha\"},{\"is_owned_by_current_login\":1}]]},"
+                + "\"1\":{\"team\":[[{\"team_key\":\"477.l.1.t.2\"},{\"name\":\"Bravo\"}]]},"
+                + "\"2\":{\"team\":[[{\"team_key\":\"477.l.1.t.3\"},{\"name\":\"Charlie\"}]]},"
+                + "\"3\":{\"team\":[[{\"team_key\":\"477.l.1.t.4\"},{\"name\":\"Delta\"}]]},"
                 + "\"count\":4}}]}}"));
         when(client.getLeagueDraft("token", "477.l.1")).thenReturn(json(
                 "{\"fantasy_content\":{\"league\":[{\"league_key\":\"477.l.1\",\"draft_status\":\"predraft\",\"draft_position\":3},"
                 + "{\"settings\":[{\"is_auction_draft\":\"0\"}]},"
                 + "{\"draft_results\":[]},"
                 + "{\"teams\":{"
-                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.1.t.1\"},{\"name\":\"Alexander\"},{\"is_owned_by_current_login\":1}]]},"
-                + "\"1\":{\"team\":[[{\"team_key\":\"477.l.1.t.2\"},{\"name\":\"Theo\"}]]},"
-                + "\"2\":{\"team\":[[{\"team_key\":\"477.l.1.t.3\"},{\"name\":\"Albin\"}]]},"
-                + "\"3\":{\"team\":[[{\"team_key\":\"477.l.1.t.4\"},{\"name\":\"Andreas\"}]]},"
+                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.1.t.1\"},{\"name\":\"Alpha\"},{\"is_owned_by_current_login\":1}]]},"
+                + "\"1\":{\"team\":[[{\"team_key\":\"477.l.1.t.2\"},{\"name\":\"Bravo\"}]]},"
+                + "\"2\":{\"team\":[[{\"team_key\":\"477.l.1.t.3\"},{\"name\":\"Charlie\"}]]},"
+                + "\"3\":{\"team\":[[{\"team_key\":\"477.l.1.t.4\"},{\"name\":\"Delta\"}]]},"
                 + "\"count\":4}}]}}"));
 
         LeagueTeamsResponse teams = service().teams(USER, "477.l.1");
         assertThat(teams.draftPosition()).isNull();
         assertThat(teams.teams()).extracting("name")
-                .containsExactly("Alexander", "Theo", "Albin", "Andreas");
+                .containsExactly("Alpha", "Bravo", "Charlie", "Delta");
         LeagueDraftResponse draft = service().draft(USER, "477.l.1");
         assertThat(draft.teams()).extracting("teamKey")
                 .containsExactly("477.l.1.t.1", "477.l.1.t.2", "477.l.1.t.3", "477.l.1.t.4");
