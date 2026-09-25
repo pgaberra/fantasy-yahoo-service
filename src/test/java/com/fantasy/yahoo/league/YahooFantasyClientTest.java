@@ -85,6 +85,17 @@ class YahooFantasyClientTest {
     }
 
     @Test
+    void getLeagueRosters_asksForEveryTeamsRosterWithTheLeagueKeyEncoded() {
+        server.expect(requestTo(containsString("/league/453.l.1%2F..%2Fsecret/teams/roster?format=json")))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        client.getLeagueRosters("tok", "453.l.1/../secret");
+
+        server.verify();
+    }
+
+    @Test
     void aYahooErrorStatus_isAnUpstreamFailure() {
         server.expect(requestTo(containsString("/league/453.l.123/settings")))
                 .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE));

@@ -81,6 +81,14 @@ public class YahooFantasyClient {
     }
 
     /**
+     * A league's teams, each with the players on its roster today. Yahoo's roster is the current
+     * one, so a player traded, dropped or picked up since the draft sits where he is now.
+     */
+    public JsonNode getLeagueRosters(String accessToken, String leagueKey) {
+        return get(accessToken, "/league/{leagueKey}/teams/roster?format=json", leagueKey);
+    }
+
+    /**
      * One page (25) of a game's player collection with each player's season stat line,
      * starting at the given offset. When {@code season} is blank Yahoo uses the current season.
      */
@@ -159,7 +167,8 @@ public class YahooFantasyClient {
             "settings", "/settings",
             "teams", "/teams",
             "draftresults", "/draftresults",
-            "draft", ";out=settings,draftresults,teams");
+            "draft", ";out=settings,draftresults,teams",
+            "rosters", "/teams/roster");
 
     /**
      * One of a league's resources, raw. For diagnosing what Yahoo actually sends before code is

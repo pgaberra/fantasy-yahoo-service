@@ -4,6 +4,9 @@ import com.fantasy.yahoo.league.dto.DraftStatus;
 import com.fantasy.yahoo.league.dto.LeagueDraftPick;
 import com.fantasy.yahoo.league.dto.LeagueDraftResponse;
 import com.fantasy.yahoo.league.dto.LeagueDraftTeam;
+import com.fantasy.yahoo.league.dto.LeagueRosterPlayer;
+import com.fantasy.yahoo.league.dto.LeagueRosterTeam;
+import com.fantasy.yahoo.league.dto.LeagueRostersResponse;
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
 import com.fantasy.yahoo.league.dto.LeagueSummary;
 import com.fantasy.yahoo.league.dto.LeagueTeam;
@@ -133,6 +136,55 @@ public class YahooLeagueService {
                 picks);
     }
 
+    /**
+     * Every team with the players it holds today. A player whose key carries no id is left out
+     * rather than guessed at, since an id is all a consumer matches him by.
+     */
+    public LeagueRostersResponse rosters(String appUserId, String leagueKey) {
+        JsonNode root = client.getLeagueRosters(oauthService.validAccessToken(appUserId), leagueKey);
+        JsonNode leagueArray = root.path("fantasy_content").path("league");
+        List<LeagueRosterTeam> teams = new ArrayList<>();
+        for (JsonNode entry : numericChildren(subresource(leagueArray, "teams"))) {
+            JsonNode teamArray = entry.path("team");
+            LeagueDraftTeam team = teamIdentity(teamArray.path(0));
+            if (team == null) {
+                continue;
+            }
+            teams.add(new LeagueRosterTeam(team.teamKey(), team.name(), team.mine(),
+                    rosterPlayers(subresource(teamArray, "roster"))));
+        }
+        return new LeagueRostersResponse(firstNonBlank(text(leagueArray.path(0), "league_key"), leagueKey), teams);
+    }
+
+    /** Yahoo files a roster's players under its first numeric key, beside the roster's own coverage fields. */
+    private static List<LeagueRosterPlayer> rosterPlayers(JsonNode roster) {
+        List<LeagueRosterPlayer> players = new ArrayList<>();
+        for (JsonNode block : numericChildren(roster)) {
+            for (JsonNode entry : numericChildren(block.path("players"))) {
+                LeagueRosterPlayer player = rosterPlayer(entry.path("player"));
+                if (player != null) {
+                    players.add(player);
+                }
+            }
+        }
+        return players;
+    }
+
+    private static LeagueRosterPlayer rosterPlayer(JsonNode playerArray) {
+        String playerKey = null;
+        for (JsonNode attribute : playerArray.path(0)) {
+            if (attribute.hasNonNull("player_key")) {
+                playerKey = attribute.get("player_key").asText();
+            }
+        }
+        Integer playerId = playerId(playerKey);
+        if (playerId == null) {
+            return null;
+        }
+        String selected = text(flatten(subresource(playerArray, "selected_position")), "position");
+        return new LeagueRosterPlayer(playerKey, playerId, selected);
+    }
+
     /** With {@code out=…} Yahoo lists each sub-resource as its own element after the metadata. */
     private static JsonNode subresource(JsonNode leagueArray, String name) {
         for (JsonNode element : leagueArray) {
@@ -176,25 +228,31 @@ public class YahooLeagueService {
     private static List<LeagueDraftTeam> parseDraftTeams(JsonNode teamsNode) {
         List<LeagueDraftTeam> teams = new ArrayList<>();
         for (JsonNode entry : numericChildren(teamsNode)) {
-            String teamKey = null;
-            String name = null;
-            boolean mine = false;
-            for (JsonNode attribute : entry.path("team").path(0)) {
-                if (attribute.hasNonNull("team_key")) {
-                    teamKey = attribute.get("team_key").asText();
-                }
-                if (attribute.hasNonNull("name")) {
-                    name = attribute.get("name").asText();
-                }
-                if (attribute.hasNonNull("is_owned_by_current_login")) {
-                    mine = attribute.get("is_owned_by_current_login").asInt(0) == 1;
-                }
-            }
-            if (teamKey != null && name != null) {
-                teams.add(new LeagueDraftTeam(teamKey, name, mine));
+            LeagueDraftTeam team = teamIdentity(entry.path("team").path(0));
+            if (team != null) {
+                teams.add(team);
             }
         }
         return teams;
+    }
+
+    /** A team's key, name and ownership from its attribute list, or null when the key or name is missing. */
+    private static LeagueDraftTeam teamIdentity(JsonNode attributes) {
+        String teamKey = null;
+        String name = null;
+        boolean mine = false;
+        for (JsonNode attribute : attributes) {
+            if (attribute.hasNonNull("team_key")) {
+                teamKey = attribute.get("team_key").asText();
+            }
+            if (attribute.hasNonNull("name")) {
+                name = attribute.get("name").asText();
+            }
+            if (attribute.hasNonNull("is_owned_by_current_login")) {
+                mine = attribute.get("is_owned_by_current_login").asInt(0) == 1;
+            }
+        }
+        return teamKey != null && name != null ? new LeagueDraftTeam(teamKey, name, mine) : null;
     }
 
     /**

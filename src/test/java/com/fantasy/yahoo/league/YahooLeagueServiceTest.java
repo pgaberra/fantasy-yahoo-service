@@ -2,6 +2,7 @@ package com.fantasy.yahoo.league;
 
 import com.fantasy.yahoo.league.dto.DraftStatus;
 import com.fantasy.yahoo.league.dto.LeagueDraftResponse;
+import com.fantasy.yahoo.league.dto.LeagueRostersResponse;
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
 import com.fantasy.yahoo.league.dto.LeagueTeamsResponse;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
@@ -291,6 +292,85 @@ class YahooLeagueServiceTest {
         assertThat(draft.teams()).extracting("teamKey")
                 .containsExactly("465.l.9.t.3", "465.l.9.t.1", "465.l.9.t.2");
         assertThat(draft.orderKnown()).isFalse();
+    }
+
+    @Test
+    void rosters_listsEachTeamsCurrentPlayersWithTheirSlots() throws Exception {
+        when(oauthService.validAccessToken(USER)).thenReturn("token");
+        when(client.getLeagueRosters("token", "465.l.9")).thenReturn(json(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\",\"name\":\"Test League\"},"
+                + "{\"teams\":{"
+                + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"team_id\":\"1\"},{\"name\":\"Alpha\"},[],"
+                + "{\"is_owned_by_current_login\":1}],"
+                + "{\"roster\":{\"coverage_type\":\"date\",\"date\":\"2026-10-07\",\"is_editable\":1,"
+                + "\"0\":{\"players\":{"
+                + "\"0\":{\"player\":[[{\"player_key\":\"465.p.6743\"},{\"player_id\":\"6743\"},"
+                + "{\"name\":{\"full\":\"Player One\"}}],"
+                + "{\"selected_position\":[{\"coverage_type\":\"date\",\"date\":\"2026-10-07\"},{\"position\":\"C\"}]},"
+                + "{\"is_editable\":1}]},"
+                + "\"1\":{\"player\":[[{\"player_key\":\"465.p.7109\"},{\"player_id\":\"7109\"}],"
+                + "{\"selected_position\":[{\"coverage_type\":\"date\"},{\"position\":\"IR+\"}]}]},"
+                + "\"count\":2}},\"outs_allowed\":0}}]},"
+                + "\"1\":{\"team\":[[{\"team_key\":\"465.l.9.t.2\"},{\"team_id\":\"2\"},{\"name\":\"Bravo\"}],"
+                + "{\"roster\":{\"coverage_type\":\"date\",\"0\":{\"players\":{"
+                + "\"0\":{\"player\":[[{\"player_key\":\"465.p.5000\"}],"
+                + "{\"selected_position\":[{\"position\":\"BN\"}]}]},"
+                + "\"count\":1}}}}]},"
+                + "\"count\":2}}]}}"));
+
+        LeagueRostersResponse rosters = service().rosters(USER, "465.l.9");
+
+        assertThat(rosters.leagueKey()).isEqualTo("465.l.9");
+        assertThat(rosters.teams()).extracting("teamKey").containsExactly("465.l.9.t.1", "465.l.9.t.2");
+        assertThat(rosters.teams().getFirst().name()).isEqualTo("Alpha");
+        assertThat(rosters.teams().getFirst().mine()).isTrue();
+        assertThat(rosters.teams().get(1).mine()).isFalse();
+        assertThat(rosters.teams().getFirst().players()).extracting("playerId").containsExactly(6743, 7109);
+        assertThat(rosters.teams().getFirst().players()).extracting("playerKey")
+                .containsExactly("465.p.6743", "465.p.7109");
+        assertThat(rosters.teams().getFirst().players()).extracting("selectedPosition").containsExactly("C", "IR+");
+        assertThat(rosters.teams().get(1).players()).extracting("playerId").containsExactly(5000);
+        assertThat(rosters.teams().get(1).players().getFirst().selectedPosition()).isEqualTo("BN");
+    }
+
+    @Test
+    void rosters_beforeTheDraftListsTeamsWithEmptyRosters() throws Exception {
+        when(oauthService.validAccessToken(USER)).thenReturn("token");
+        when(client.getLeagueRosters("token", "465.l.9")).thenReturn(json(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\"},"
+                + "{\"teams\":{"
+                + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"name\":\"Alpha\"}],"
+                + "{\"roster\":{\"coverage_type\":\"date\",\"0\":{\"players\":[]}}}]},"
+                + "\"1\":{\"team\":[[{\"team_key\":\"465.l.9.t.2\"},{\"name\":\"Bravo\"}],"
+                + "{\"roster\":{\"coverage_type\":\"date\"}}]},"
+                + "\"count\":2}}]}}"));
+
+        LeagueRostersResponse rosters = service().rosters(USER, "465.l.9");
+
+        assertThat(rosters.teams()).hasSize(2);
+        assertThat(rosters.teams()).allSatisfy(team -> assertThat(team.players()).isEmpty());
+    }
+
+    @Test
+    void rosters_leavesOutAPlayerWhoseKeyCarriesNoIdAndATeamWithoutAKey() throws Exception {
+        when(oauthService.validAccessToken(USER)).thenReturn("token");
+        when(client.getLeagueRosters("token", "465.l.9")).thenReturn(json(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\"},"
+                + "{\"teams\":{"
+                + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"name\":\"Alpha\"}],"
+                + "{\"roster\":{\"0\":{\"players\":{"
+                + "\"0\":{\"player\":[[{\"player_key\":\"465.p.x\"}]]},"
+                + "\"1\":{\"player\":[[{\"name\":{\"full\":\"No Key\"}}]]},"
+                + "\"2\":{\"player\":[[{\"player_key\":\"465.p.42\"}]]},"
+                + "\"count\":3}}}}]},"
+                + "\"1\":{\"team\":[[{\"name\":\"Keyless\"}],{\"roster\":{}}]},"
+                + "\"count\":2}}]}}"));
+
+        LeagueRostersResponse rosters = service().rosters(USER, "465.l.9");
+
+        assertThat(rosters.teams()).extracting("teamKey").containsExactly("465.l.9.t.1");
+        assertThat(rosters.teams().getFirst().players()).extracting("playerId").containsExactly(42);
+        assertThat(rosters.teams().getFirst().players().getFirst().selectedPosition()).isNull();
     }
 
     @Test
