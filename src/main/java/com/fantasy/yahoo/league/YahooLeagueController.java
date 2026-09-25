@@ -2,6 +2,7 @@ package com.fantasy.yahoo.league;
 
 import com.fantasy.yahoo.exception.ErrorDto;
 import com.fantasy.yahoo.league.dto.LeagueDraftResponse;
+import com.fantasy.yahoo.league.dto.LeagueRostersResponse;
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
 import com.fantasy.yahoo.league.dto.LeagueTeamsResponse;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
@@ -94,6 +95,24 @@ public class YahooLeagueController {
     public LeagueDraftResponse draft(@PathVariable String leagueKey,
                                      @RequestParam String appUserId) {
         return leagueService.draft(appUserId, leagueKey);
+    }
+
+    @Operation(summary = "List a league's teams with the players each holds now",
+            description = "Each team's current roster, after trades, drops and pickups, bench and injured "
+                    + "reserve included. Player ids are the ids the draft's picks and the player read model use.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Rosters returned"),
+            @ApiResponse(responseCode = "400", description = "The league key or user id is blank or too long",
+                    content = @Content(schema = @Schema(implementation = ErrorDto.class))),
+            @ApiResponse(responseCode = "404", description = "User has not connected Yahoo",
+                    content = @Content(schema = @Schema(implementation = ErrorDto.class))),
+            @ApiResponse(responseCode = "403", description = REFUSED,
+                    content = @Content(schema = @Schema(implementation = ErrorDto.class)))
+    })
+    @GetMapping("/{leagueKey}/rosters")
+    public LeagueRostersResponse rosters(@PathVariable @NotBlank @Size(max = 64) String leagueKey,
+                                         @RequestParam @NotBlank @Size(max = 128) String appUserId) {
+        return leagueService.rosters(appUserId, leagueKey);
     }
 
     @Operation(summary = "List the players the league has available",
