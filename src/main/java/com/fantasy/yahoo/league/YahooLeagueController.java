@@ -4,7 +4,6 @@ import com.fantasy.yahoo.exception.ErrorDto;
 import com.fantasy.yahoo.league.dto.LeagueDraftResponse;
 import com.fantasy.yahoo.league.dto.LeagueRostersResponse;
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
-import com.fantasy.yahoo.league.dto.LeagueTeamsResponse;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
 import com.fantasy.yahoo.player.YahooPlayerService;
 import com.fantasy.yahoo.player.dto.YahooAvailablePlayerResponse;
@@ -69,19 +68,6 @@ public class YahooLeagueController {
     public LeagueSettingsResponse settings(@PathVariable String leagueKey,
                                            @RequestParam String appUserId) {
         return leagueService.settings(appUserId, leagueKey);
-    }
-
-    @Operation(summary = "List a league's teams (names + which is the user's own)")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Teams returned"),
-            @ApiResponse(responseCode = "404", description = "User has not connected Yahoo"),
-            @ApiResponse(responseCode = "403", description = REFUSED,
-                    content = @Content(schema = @Schema(implementation = ErrorDto.class)))
-    })
-    @GetMapping("/{leagueKey}/teams")
-    public LeagueTeamsResponse teams(@PathVariable String leagueKey,
-                                     @RequestParam String appUserId) {
-        return leagueService.teams(appUserId, leagueKey);
     }
 
     @Operation(summary = "Get a league's draft: status, teams in draft order, and the picks made so far")

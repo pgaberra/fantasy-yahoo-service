@@ -9,8 +9,6 @@ import com.fantasy.yahoo.league.dto.LeagueRosterTeam;
 import com.fantasy.yahoo.league.dto.LeagueRostersResponse;
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
 import com.fantasy.yahoo.league.dto.LeagueSummary;
-import com.fantasy.yahoo.league.dto.LeagueTeam;
-import com.fantasy.yahoo.league.dto.LeagueTeamsResponse;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
 import com.fantasy.yahoo.league.dto.RosterSlot;
 import com.fantasy.yahoo.league.dto.StatCategory;
@@ -78,44 +76,6 @@ public class YahooLeagueService {
                 firstNonBlank(text(settings, "scoring_type"), text(meta, "scoring_type")),
                 parseStatCategories(settings),
                 parseRosterPositions(settings));
-    }
-
-    /**
-     * The league's teams and the manager's own seat in its draft, which is all a draft setup reads:
-     * the league's size and where the manager picks. The seat is null when Yahoo names it nowhere,
-     * so a setup can ask rather than present a guess as the league's order.
-     */
-    public LeagueTeamsResponse teams(String appUserId, String leagueKey) {
-        JsonNode root = client.getLeagueTeams(oauthService.validAccessToken(appUserId), leagueKey);
-        JsonNode leagueArray = root.path("fantasy_content").path("league");
-        List<LeagueDraftPick> picks = parseDraftPicks(subresource(leagueArray, "draft_results"));
-        List<LeagueDraftTeam> ordered =
-                inDraftOrder(parseDraftTeams(subresource(leagueArray, "teams")), picks).teams();
-        List<LeagueTeam> teams = ordered.stream()
-                .map(team -> new LeagueTeam(team.name(), team.mine()))
-                .toList();
-        return new LeagueTeamsResponse(teams, ownSeat(ordered, picks));
-    }
-
-    /**
-     * The manager's seat, from the slot its team holds in the first round — the only place Yahoo
-     * states a draft's order. Null until those slots exist, which for a live draft means until the
-     * draft runs.
-     *
-     * <p>The league metadata's own {@code draft_position} looks like the answer and is not: read
-     * against a real 14-team league whose published order had the manager twelfth, it said 10,
-     * while {@code draft_results} was empty and no team carried a position of its own. It is not
-     * corrected before the draft, so it cannot be told apart from a right one.
-     */
-    private static Integer ownSeat(List<LeagueDraftTeam> ordered, List<LeagueDraftPick> picks) {
-        LeagueDraftTeam own =
-                ordered.stream().filter(LeagueDraftTeam::mine).findFirst().orElse(null);
-        if (own == null) {
-            return null;
-        }
-        boolean slotted = picks.stream()
-                .anyMatch(pick -> pick.round() == 1 && own.teamKey().equals(pick.teamKey()));
-        return slotted ? Integer.valueOf(ordered.indexOf(own) + 1) : null;
     }
 
     public LeagueDraftResponse draft(String appUserId, String leagueKey) {

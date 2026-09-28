@@ -4,7 +4,6 @@ import com.fantasy.yahoo.league.dto.DraftStatus;
 import com.fantasy.yahoo.league.dto.LeagueDraftResponse;
 import com.fantasy.yahoo.league.dto.LeagueRostersResponse;
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
-import com.fantasy.yahoo.league.dto.LeagueTeamsResponse;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
 import com.fantasy.yahoo.oauth.YahooOAuthService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -84,108 +83,6 @@ class YahooLeagueServiceTest {
         assertThat(settings.rosterPositions().getFirst().count()).isEqualTo(2);
         assertThat(settings.rosterPositions().get(1).position()).isEqualTo("BN");
         assertThat(settings.rosterPositions().get(1).count()).isEqualTo(4);
-    }
-
-    @Test
-    void teams_parsesNamesAndOwnership() throws Exception {
-        when(oauthService.validAccessToken(USER)).thenReturn("token");
-        when(client.getLeagueTeams("token", "453.l.123")).thenReturn(json(
-                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"453.l.123\",\"name\":\"My League\"},"
-                + "{\"teams\":{"
-                + "\"0\":{\"team\":[[{\"team_key\":\"453.l.123.t.1\"},{\"team_id\":\"1\"},{\"name\":\"Alpha\"}]]},"
-                + "\"1\":{\"team\":[[{\"team_key\":\"453.l.123.t.2\"},{\"team_id\":\"2\"},{\"name\":\"Bravo\"},"
-                + "{\"is_owned_by_current_login\":1}]]},"
-                + "\"count\":2}}]}}"));
-
-        LeagueTeamsResponse response = service().teams(USER, "453.l.123");
-
-        assertThat(response.teams()).hasSize(2);
-        assertThat(response.teams().getFirst().name()).isEqualTo("Alpha");
-        assertThat(response.teams().getFirst().mine()).isFalse();
-        assertThat(response.teams().get(1).name()).isEqualTo("Bravo");
-        assertThat(response.teams().get(1).mine()).isTrue();
-        assertThat(response.draftPosition()).isNull();
-    }
-
-    @Test
-    void teams_readsTheSeatFromTheDraftsSlotsRatherThanTheMetadata() throws Exception {
-        when(oauthService.validAccessToken(USER)).thenReturn("token");
-        when(client.getLeagueTeams("token", "477.l.5")).thenReturn(json(
-                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"477.l.5\",\"draft_status\":\"predraft\",\"draft_position\":2},"
-                + "{\"draft_results\":{"
-                + "\"0\":{\"draft_result\":{\"pick\":1,\"round\":1,\"team_key\":\"477.l.5.t.2\"}},"
-                + "\"1\":{\"draft_result\":{\"pick\":2,\"round\":1,\"team_key\":\"477.l.5.t.3\"}},"
-                + "\"2\":{\"draft_result\":{\"pick\":3,\"round\":1,\"team_key\":\"477.l.5.t.1\"}},"
-                + "\"count\":3}},"
-                + "{\"teams\":{"
-                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.5.t.1\"},{\"name\":\"Charlie\"},"
-                + "{\"is_owned_by_current_login\":1}]]},"
-                + "\"1\":{\"team\":[[{\"team_key\":\"477.l.5.t.2\"},{\"name\":\"Alpha\"}]]},"
-                + "\"2\":{\"team\":[[{\"team_key\":\"477.l.5.t.3\"},{\"name\":\"Bravo\"}]]},"
-                + "\"count\":3}}]}}"));
-
-        LeagueTeamsResponse response = service().teams(USER, "477.l.5");
-
-        assertThat(response.draftPosition()).isEqualTo(3);
-        assertThat(response.teams()).extracting("name").containsExactly("Alpha", "Bravo", "Charlie");
-    }
-
-    @Test
-    void teams_saysNoSeatWhenYahooNamesNone() throws Exception {
-        when(oauthService.validAccessToken(USER)).thenReturn("token");
-        when(client.getLeagueTeams("token", "477.l.7")).thenReturn(json(
-                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"477.l.7\",\"draft_status\":\"predraft\"},"
-                + "{\"draft_results\":[]},"
-                + "{\"teams\":{"
-                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.7.t.1\"},{\"name\":\"Alpha\"}]]},"
-                + "\"1\":{\"team\":[[{\"team_key\":\"477.l.7.t.2\"},{\"name\":\"Bravo\"},"
-                + "{\"is_owned_by_current_login\":1}]]},"
-                + "\"count\":2}}]}}"));
-
-        LeagueTeamsResponse response = service().teams(USER, "477.l.7");
-
-        assertThat(response.draftPosition()).isNull();
-        assertThat(response.teams()).extracting("name").containsExactly("Alpha", "Bravo");
-    }
-
-    /**
-     * Read against the real 14-team league this came from, the metadata's `draft_position` said 10
-     * while the league's own published order had that manager twelfth — `draft_results` empty, no
-     * team carrying a position of its own, and nothing to tell the two apart from inside. A seat
-     * that cannot be told apart from a right one is worse than no seat.
-     */
-    @Test
-    void teams_ignoreTheLeagueMetadataSeatBeforeTheDraftListsSlots() throws Exception {
-        when(oauthService.validAccessToken(USER)).thenReturn("token");
-        when(client.getLeagueTeams("token", "477.l.1")).thenReturn(json(
-                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"477.l.1\",\"draft_status\":\"predraft\",\"draft_position\":3},"
-                + "{\"settings\":[{\"is_auction_draft\":\"0\"}]},"
-                + "{\"draft_results\":[]},"
-                + "{\"teams\":{"
-                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.1.t.1\"},{\"name\":\"Alpha\"},{\"is_owned_by_current_login\":1}]]},"
-                + "\"1\":{\"team\":[[{\"team_key\":\"477.l.1.t.2\"},{\"name\":\"Bravo\"}]]},"
-                + "\"2\":{\"team\":[[{\"team_key\":\"477.l.1.t.3\"},{\"name\":\"Charlie\"}]]},"
-                + "\"3\":{\"team\":[[{\"team_key\":\"477.l.1.t.4\"},{\"name\":\"Delta\"}]]},"
-                + "\"count\":4}}]}}"));
-        when(client.getLeagueDraft("token", "477.l.1")).thenReturn(json(
-                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"477.l.1\",\"draft_status\":\"predraft\",\"draft_position\":3},"
-                + "{\"settings\":[{\"is_auction_draft\":\"0\"}]},"
-                + "{\"draft_results\":[]},"
-                + "{\"teams\":{"
-                + "\"0\":{\"team\":[[{\"team_key\":\"477.l.1.t.1\"},{\"name\":\"Alpha\"},{\"is_owned_by_current_login\":1}]]},"
-                + "\"1\":{\"team\":[[{\"team_key\":\"477.l.1.t.2\"},{\"name\":\"Bravo\"}]]},"
-                + "\"2\":{\"team\":[[{\"team_key\":\"477.l.1.t.3\"},{\"name\":\"Charlie\"}]]},"
-                + "\"3\":{\"team\":[[{\"team_key\":\"477.l.1.t.4\"},{\"name\":\"Delta\"}]]},"
-                + "\"count\":4}}]}}"));
-
-        LeagueTeamsResponse teams = service().teams(USER, "477.l.1");
-        assertThat(teams.draftPosition()).isNull();
-        assertThat(teams.teams()).extracting("name")
-                .containsExactly("Alpha", "Bravo", "Charlie", "Delta");
-        LeagueDraftResponse draft = service().draft(USER, "477.l.1");
-        assertThat(draft.teams()).extracting("teamKey")
-                .containsExactly("477.l.1.t.1", "477.l.1.t.2", "477.l.1.t.3", "477.l.1.t.4");
-        assertThat(draft.orderKnown()).isFalse();
     }
 
     @Test
