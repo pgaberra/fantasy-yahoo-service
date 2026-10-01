@@ -46,9 +46,26 @@ class YahooFantasyClientTest {
                 .andExpect(header("Authorization", "Bearer tok"))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
-        client.getAvailablePlayers("tok", "453.l.123", 25, 10);
+        client.getAvailablePlayers("tok", "453.l.123", null, 25, 10);
 
         server.verify();
+    }
+
+    @Test
+    void getAvailablePlayers_filtersByPositionWhenOneIsGiven() {
+        server.expect(requestTo(containsString(
+                        "/league/453.l.123/players;status=A;position=G;sort=AR;start=0;count=25;out=ownership")))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        client.getAvailablePlayers("tok", "453.l.123", "G", 0, 25);
+
+        server.verify();
+    }
+
+    @Test
+    void getAvailablePlayers_refusesAPositionOutsideTheAllowList() {
+        assertThatThrownBy(() -> client.getAvailablePlayers("tok", "453.l.123", "G;status=T", 0, 25))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

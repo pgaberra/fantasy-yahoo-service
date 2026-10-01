@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -48,6 +49,26 @@ class YahooLeagueControllerTest {
                 .andExpect(jsonPath("$.teams[0].mine").value(true))
                 .andExpect(jsonPath("$.teams[0].players[0].playerId").value(6743))
                 .andExpect(jsonPath("$.teams[0].players[0].selectedPosition").value("C"));
+    }
+
+    @Test
+    void freeAgents_passesAnAllowedPositionThrough() throws Exception {
+        when(playerService.availablePlayers("user-1", "465.l.1", "G", 50)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/yahoo/leagues/465.l.1/free-agents")
+                        .param("appUserId", "user-1").param("limit", "50").param("position", "G"))
+                .andExpect(status().isOk());
+
+        verify(playerService).availablePlayers("user-1", "465.l.1", "G", 50);
+    }
+
+    @Test
+    void freeAgents_rejectsAPositionOutsideTheAllowListBeforeAskingYahoo() throws Exception {
+        mockMvc.perform(get("/api/v1/yahoo/leagues/465.l.1/free-agents")
+                        .param("appUserId", "user-1").param("position", "G;status=T"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(playerService);
     }
 
     @Test

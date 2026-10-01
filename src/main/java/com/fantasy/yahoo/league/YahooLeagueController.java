@@ -8,6 +8,7 @@ import com.fantasy.yahoo.league.dto.LeaguesResponse;
 import com.fantasy.yahoo.player.YahooPlayerService;
 import com.fantasy.yahoo.player.dto.YahooAvailablePlayerResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -16,6 +17,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -103,10 +105,12 @@ public class YahooLeagueController {
 
     @Operation(summary = "List the players the league has available",
             description = "Free agents and players on waivers, in Yahoo's actual-rank order, so the "
-                    + "first rows are the best available. Read with the user's own Yahoo token.")
+                    + "first rows are the best available, optionally only those eligible at one "
+                    + "position. Read with the user's own Yahoo token.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Available players returned"),
-            @ApiResponse(responseCode = "400", description = "The limit is outside 1-" + MAX_AVAILABLE),
+            @ApiResponse(responseCode = "400", description = "The limit is outside 1-" + MAX_AVAILABLE
+                    + " or the position is not one of C, LW, RW, D, G"),
             @ApiResponse(responseCode = "404", description = "User has not connected Yahoo"),
             @ApiResponse(responseCode = "403", description = REFUSED,
                     content = @Content(schema = @Schema(implementation = ErrorDto.class)))
@@ -115,7 +119,10 @@ public class YahooLeagueController {
     public List<YahooAvailablePlayerResponse> freeAgents(
             @PathVariable @NotBlank @Size(max = 64) String leagueKey,
             @RequestParam @NotBlank @Size(max = 128) String appUserId,
-            @RequestParam(defaultValue = "150") @Min(1) @Max(MAX_AVAILABLE) int limit) {
-        return playerService.availablePlayers(appUserId, leagueKey, limit);
+            @RequestParam(defaultValue = "150") @Min(1) @Max(MAX_AVAILABLE) int limit,
+            @Parameter(description = "Only the players eligible at this position; all positions when absent")
+            @RequestParam(required = false) @Pattern(regexp = YahooFantasyClient.POSITION_PATTERN)
+            String position) {
+        return playerService.availablePlayers(appUserId, leagueKey, position, limit);
     }
 }
