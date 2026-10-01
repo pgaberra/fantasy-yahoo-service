@@ -60,7 +60,8 @@ public class YahooPlayerService {
     }
 
     /**
-     * The players the league has available, best first, capped at {@code limit}.
+     * The players the league has available, best first, capped at {@code limit}; only those
+     * eligible at {@code position} when one is given.
      *
      * <p>Read with the **user's own** token, not the service account's: what is available is a
      * fact about their league, and the service account is not in it. Yahoo's actual-rank sort is
@@ -68,12 +69,12 @@ public class YahooPlayerService {
      * nobody is streaming rather than an arbitrary slice.
      */
     public List<YahooAvailablePlayerResponse> availablePlayers(
-            String appUserId, String leagueKey, int limit) {
+            String appUserId, String leagueKey, String position, int limit) {
         String accessToken = oauthService.validAccessToken(appUserId);
         List<YahooAvailablePlayerResponse> available = new ArrayList<>();
         for (int index = 0; index < MAX_PAGES && available.size() < limit; index++) {
             int count = Math.min(PAGE_SIZE, limit - available.size());
-            JsonNode root = client.getAvailablePlayers(accessToken, leagueKey, index * PAGE_SIZE, count);
+            JsonNode root = client.getAvailablePlayers(accessToken, leagueKey, position, index * PAGE_SIZE, count);
             List<JsonNode> entries =
                     numericChildren(root.path("fantasy_content").path("league").path(1).path("players"));
             for (JsonNode entry : entries) {

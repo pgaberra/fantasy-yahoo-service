@@ -25,6 +25,9 @@ import org.springframework.web.client.RestClientResponseException;
 @Component
 public class YahooFantasyClient {
 
+    /** The positions a league's player collection can be filtered by. */
+    public static final String POSITION_PATTERN = "^(C|LW|RW|D|G)$";
+
     private final RestClient restClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -55,12 +58,27 @@ public class YahooFantasyClient {
      * <p>{@code status=A} is Yahoo's "available", which is the union of the two. Asking for free
      * agents alone would hide the player a rival dropped an hour ago, who is the one a streamer is
      * most often looking for.
+     *
+     * <p>A {@code position} narrows the list to the players eligible there, so a caller can read
+     * a position's whole wire instead of the few that make a mixed top list. It is spliced into
+     * the path, so only the allow-listed codes get through.
      */
-    public JsonNode getAvailablePlayers(String accessToken, String leagueKey, int start, int count) {
+    public JsonNode getAvailablePlayers(
+            String accessToken, String leagueKey, String position, int start, int count) {
         return get(accessToken,
-                "/league/{leagueKey}/players;status=A;sort=AR;start=" + start + ";count=" + count
-                        + ";out=ownership?format=json",
+                "/league/{leagueKey}/players;status=A" + positionFilter(position) + ";sort=AR;start="
+                        + start + ";count=" + count + ";out=ownership?format=json",
                 leagueKey);
+    }
+
+    private static String positionFilter(String position) {
+        if (position == null) {
+            return "";
+        }
+        if (!position.matches(POSITION_PATTERN)) {
+            throw new IllegalArgumentException("Not a player position: " + position);
+        }
+        return ";position=" + position;
     }
 
     /**
