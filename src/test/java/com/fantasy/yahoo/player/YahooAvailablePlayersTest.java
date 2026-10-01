@@ -32,7 +32,7 @@ class YahooAvailablePlayersTest {
     private YahooFantasyClient client;
 
     private YahooPlayerService service() {
-        return new YahooPlayerService(oauthService, client);
+        return new YahooPlayerService(oauthService, client, 0);
     }
 
     @Test
