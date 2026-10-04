@@ -1,5 +1,6 @@
 package com.fantasy.yahoo.player;
 
+import com.fantasy.yahoo.exception.YahooUpstreamException;
 import com.fantasy.yahoo.league.YahooFantasyClient;
 import com.fantasy.yahoo.oauth.YahooOAuthService;
 import com.fantasy.yahoo.player.dto.YahooAvailability;
@@ -10,6 +11,7 @@ import com.fantasy.yahoo.player.dto.YahooSkaterStats;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -24,13 +26,19 @@ public class YahooPlayerService {
 
     private static final int PAGE_SIZE = 25;
     private static final int MAX_PAGES = 80;
+    private static final int PAGE_ATTEMPTS = 3;
 
     private final YahooOAuthService oauthService;
     private final YahooFantasyClient client;
+    private final long retryBackoffMillis;
 
-    public YahooPlayerService(YahooOAuthService oauthService, YahooFantasyClient client) {
+    public YahooPlayerService(YahooOAuthService oauthService,
+                              YahooFantasyClient client,
+                              @Value("${yahoo.players.page-retry-backoff-ms:2000}")
+                              long retryBackoffMillis) {
         this.oauthService = oauthService;
         this.client = client;
+        this.retryBackoffMillis = retryBackoffMillis;
     }
 
     /**
@@ -131,7 +139,7 @@ public class YahooPlayerService {
         String accessToken = oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID);
         List<YahooPlayerResponse> all = new ArrayList<>();
         for (int index = 0; index < MAX_PAGES; index++) {
-            JsonNode root = page.fetch(accessToken, index * PAGE_SIZE);
+            JsonNode root = fetchPage(page, accessToken, index * PAGE_SIZE, what);
             List<JsonNode> entries = numericChildren(playersNode.apply(root));
             for (JsonNode entry : entries) {
                 YahooPlayerResponse player = parsePlayer(entry);
@@ -146,6 +154,47 @@ public class YahooPlayerService {
         log.warn("Yahoo player pagination hit the {}-page cap for {}; result may be truncated",
                 MAX_PAGES, what);
         return all;
+    }
+
+    /**
+     * One page, retried a bounded number of times before the whole read is given up on.
+     *
+     * <p>A page that cannot be fetched has to fail the read: the caller compares the players it
+     * gets against the ones already cached and removes the difference, so carrying on past a gap
+     * would delete every player the missing page holds. That makes a single slow response from
+     * Yahoo expensive — one page in up to {@link #MAX_PAGES} timing out discards the other
+     * seventy-nine and leaves the cache a day stale — and a transient failure is the common case.
+     *
+     * <p>Only {@link YahooUpstreamException} is retried, which is the type for a call that never
+     * got an answer. A refusal arrives as {@code YahooAccessDeniedException}, deliberately not a
+     * subtype of it, and still fails on the first attempt: its remedy is Yahoo's grant, not a
+     * retry, and the off-season switch depends on that 403 failing fast.
+     */
+    private JsonNode fetchPage(Page page, String accessToken, int start, String what) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return page.fetch(accessToken, start);
+            } catch (YahooUpstreamException e) {
+                if (attempt >= PAGE_ATTEMPTS) {
+                    throw e;
+                }
+                log.warn("Yahoo player page at offset {} for {} failed on attempt {} of {}; retrying",
+                        start, what, attempt, PAGE_ATTEMPTS, e);
+                backOff(attempt);
+            }
+        }
+    }
+
+    private void backOff(int attempt) {
+        if (retryBackoffMillis <= 0) {
+            return;
+        }
+        try {
+            Thread.sleep(retryBackoffMillis * attempt);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new YahooUpstreamException("Interrupted while retrying a Yahoo player page", e);
+        }
     }
 
     private static String sanitize(String value) {

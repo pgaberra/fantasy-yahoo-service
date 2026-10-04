@@ -1,5 +1,7 @@
 package com.fantasy.yahoo.player;
 
+import com.fantasy.yahoo.exception.YahooAccessDeniedException;
+import com.fantasy.yahoo.exception.YahooUpstreamException;
 import com.fantasy.yahoo.league.YahooFantasyClient;
 import com.fantasy.yahoo.oauth.YahooOAuthService;
 import com.fantasy.yahoo.player.dto.YahooPlayerResponse;
@@ -13,7 +15,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,6 +25,7 @@ import static org.mockito.Mockito.when;
 class YahooPlayerServiceTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final String LEAGUE = "111.l.222";
 
     @Mock
     private YahooOAuthService oauthService;
@@ -28,7 +33,7 @@ class YahooPlayerServiceTest {
     private YahooFantasyClient client;
 
     private YahooPlayerService service() {
-        return new YahooPlayerService(oauthService, client);
+        return new YahooPlayerService(oauthService, client, 0);
     }
 
     @Test
@@ -106,6 +111,63 @@ class YahooPlayerServiceTest {
     private static JsonNode page(int count, int firstId) throws Exception {
         StringBuilder sb = new StringBuilder(
                 "{\"fantasy_content\":{\"game\":[{\"game_key\":\"453\",\"code\":\"nhl\"},{\"players\":{");
+        for (int i = 0; i < count; i++) {
+            int id = firstId + i;
+            if (i > 0) {
+                sb.append(",");
+            }
+            sb.append("\"").append(i).append("\":{\"player\":[[")
+                    .append("{\"player_id\":\"").append(id).append("\"},")
+                    .append("{\"name\":{\"full\":\"Player ").append(id).append("\"}},")
+                    .append("{\"editorial_team_abbr\":\"Edm\"},")
+                    .append("{\"position_type\":\"P\"},")
+                    .append("{\"eligible_positions\":[{\"position\":\"C\"}]}")
+                    .append("]]}");
+        }
+        sb.append(",\"count\":").append(count).append("}}]}}");
+        return json(sb.toString());
+    }
+
+    @Test
+    void retriesAPageThatFailedAndStillFinishesTheRead() throws Exception {
+        when(oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID)).thenReturn("tok");
+        when(client.getLeaguePlayers("tok", LEAGUE, 0, "2025"))
+                .thenThrow(new YahooUpstreamException("Yahoo Fantasy API call failed: I/O error"))
+                .thenReturn(leaguePage(2, 1));
+
+        List<YahooPlayerResponse> players = service().leaguePlayers(LEAGUE, "2025");
+
+        assertThat(players).hasSize(2);
+        verify(client, times(2)).getLeaguePlayers("tok", LEAGUE, 0, "2025");
+    }
+
+    @Test
+    void failsTheReadWhenAPageKeepsFailing() {
+        when(oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID)).thenReturn("tok");
+        when(client.getLeaguePlayers("tok", LEAGUE, 0, "2025"))
+                .thenThrow(new YahooUpstreamException("Yahoo Fantasy API call failed: I/O error"));
+
+        assertThatThrownBy(() -> service().leaguePlayers(LEAGUE, "2025"))
+                .isInstanceOf(YahooUpstreamException.class);
+
+        verify(client, times(3)).getLeaguePlayers("tok", LEAGUE, 0, "2025");
+    }
+
+    @Test
+    void doesNotRetryARefusal() {
+        when(oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID)).thenReturn("tok");
+        when(client.getLeaguePlayers("tok", LEAGUE, 0, "2025"))
+                .thenThrow(new YahooAccessDeniedException("Yahoo refused the request", new RuntimeException("403")));
+
+        assertThatThrownBy(() -> service().leaguePlayers(LEAGUE, "2025"))
+                .isInstanceOf(YahooAccessDeniedException.class);
+
+        verify(client, times(1)).getLeaguePlayers("tok", LEAGUE, 0, "2025");
+    }
+
+    private static JsonNode leaguePage(int count, int firstId) throws Exception {
+        StringBuilder sb = new StringBuilder(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"" + LEAGUE + "\"},{\"players\":{");
         for (int i = 0; i < count; i++) {
             int id = firstId + i;
             if (i > 0) {
