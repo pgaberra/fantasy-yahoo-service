@@ -53,6 +53,13 @@ yahoo:
     web-post-connect-url: ${WEB_POST_CONNECT_URL:http://localhost:4200}
     login-base-url: ${YAHOO_LOGIN_BASE_URL:https://api.login.yahoo.com}
     api-base-url: ${YAHOO_API_BASE_URL:https://fantasysports.yahooapis.com/fantasy/v2}
+  players:
+    # Pause between retries of a player page that failed to reach Yahoo, in milliseconds
+    # (the delay grows with the attempt; three attempts, then the read fails). Reading the
+    # pool takes up to 80 sequential calls and a gap cannot be tolerated — the sync removes
+    # the players it does not see — so one timeout would otherwise discard the whole run.
+    # 0 disables the pause, which is what the tests use.
+    page-retry-backoff-ms: ${YAHOO_PAGE_RETRY_BACKOFF_MS:2000}
 
 # Player read-model cache: refresh the skaters/goalies tables from Yahoo.
 sync:
