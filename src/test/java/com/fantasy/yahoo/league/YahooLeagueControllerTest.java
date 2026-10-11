@@ -18,6 +18,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -40,14 +41,37 @@ class YahooLeagueControllerTest {
     void rosters_returnsEachTeamWithItsCurrentPlayers() throws Exception {
         when(leagueService.rosters("user-1", "465.l.1")).thenReturn(new LeagueRostersResponse("465.l.1", List.of(
                 new LeagueRosterTeam("465.l.1.t.1", "Alpha", true,
-                        List.of(new LeagueRosterPlayer("465.p.6743", 6743, "C"))))));
+                        List.of(new LeagueRosterPlayer("465.p.6743", 6743, "C", "Player One", "EDM", 97,
+                                false, List.of("C", "LW"), "DTD"))))));
 
         mockMvc.perform(get("/api/v1/yahoo/leagues/465.l.1/rosters").param("appUserId", "user-1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.teams[0].teamKey").value("465.l.1.t.1"))
                 .andExpect(jsonPath("$.teams[0].mine").value(true))
                 .andExpect(jsonPath("$.teams[0].players[0].playerId").value(6743))
-                .andExpect(jsonPath("$.teams[0].players[0].selectedPosition").value("C"));
+                .andExpect(jsonPath("$.teams[0].players[0].selectedPosition").value("C"))
+                .andExpect(jsonPath("$.teams[0].players[0].eligiblePositions[1]").value("LW"))
+                .andExpect(jsonPath("$.teams[0].players[0].status").value("DTD"));
+    }
+
+    @Test
+    void freeAgents_passesAnAllowedPositionThrough() throws Exception {
+        when(playerService.availablePlayers("user-1", "465.l.1", "G", 50)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/yahoo/leagues/465.l.1/free-agents")
+                        .param("appUserId", "user-1").param("limit", "50").param("position", "G"))
+                .andExpect(status().isOk());
+
+        verify(playerService).availablePlayers("user-1", "465.l.1", "G", 50);
+    }
+
+    @Test
+    void freeAgents_rejectsAPositionOutsideTheAllowListBeforeAskingYahoo() throws Exception {
+        mockMvc.perform(get("/api/v1/yahoo/leagues/465.l.1/free-agents")
+                        .param("appUserId", "user-1").param("position", "G;status=T"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(playerService);
     }
 
     @Test

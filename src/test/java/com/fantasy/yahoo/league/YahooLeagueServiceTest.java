@@ -2,6 +2,7 @@ package com.fantasy.yahoo.league;
 
 import com.fantasy.yahoo.league.dto.DraftStatus;
 import com.fantasy.yahoo.league.dto.LeagueDraftResponse;
+import com.fantasy.yahoo.league.dto.LeagueRosterPlayer;
 import com.fantasy.yahoo.league.dto.LeagueRostersResponse;
 import com.fantasy.yahoo.league.dto.LeagueSettingsResponse;
 import com.fantasy.yahoo.league.dto.LeaguesResponse;
@@ -202,10 +203,13 @@ class YahooLeagueServiceTest {
                 + "{\"roster\":{\"coverage_type\":\"date\",\"date\":\"2026-10-07\",\"is_editable\":1,"
                 + "\"0\":{\"players\":{"
                 + "\"0\":{\"player\":[[{\"player_key\":\"465.p.6743\"},{\"player_id\":\"6743\"},"
-                + "{\"name\":{\"full\":\"Player One\"}}],"
+                + "{\"name\":{\"full\":\"Player One\"}},{\"status\":\"DTD\"},{\"editorial_team_abbr\":\"EDM\"},"
+                + "{\"uniform_number\":\"97\"},{\"position_type\":\"P\"},"
+                + "{\"eligible_positions\":[{\"position\":\"C\"},{\"position\":\"LW\"},{\"position\":\"Util\"}]}],"
                 + "{\"selected_position\":[{\"coverage_type\":\"date\",\"date\":\"2026-10-07\"},{\"position\":\"C\"}]},"
                 + "{\"is_editable\":1}]},"
-                + "\"1\":{\"player\":[[{\"player_key\":\"465.p.7109\"},{\"player_id\":\"7109\"}],"
+                + "\"1\":{\"player\":[[{\"player_key\":\"465.p.7109\"},{\"player_id\":\"7109\"},"
+                + "{\"position_type\":\"G\"},{\"uniform_number\":\"\"}],"
                 + "{\"selected_position\":[{\"coverage_type\":\"date\"},{\"position\":\"IR+\"}]}]},"
                 + "\"count\":2}},\"outs_allowed\":0}}]},"
                 + "\"1\":{\"team\":[[{\"team_key\":\"465.l.9.t.2\"},{\"team_id\":\"2\"},{\"name\":\"Bravo\"}],"
@@ -228,6 +232,19 @@ class YahooLeagueServiceTest {
         assertThat(rosters.teams().getFirst().players()).extracting("selectedPosition").containsExactly("C", "IR+");
         assertThat(rosters.teams().get(1).players()).extracting("playerId").containsExactly(5000);
         assertThat(rosters.teams().get(1).players().getFirst().selectedPosition()).isEqualTo("BN");
+
+        LeagueRosterPlayer one = rosters.teams().getFirst().players().getFirst();
+        assertThat(one.fullName()).isEqualTo("Player One");
+        assertThat(one.teamAbbrev()).isEqualTo("EDM");
+        assertThat(one.uniformNumber()).isEqualTo(97);
+        assertThat(one.goalie()).isFalse();
+        assertThat(one.eligiblePositions()).containsExactly("C", "LW", "Util");
+        assertThat(one.status()).isEqualTo("DTD");
+        LeagueRosterPlayer two = rosters.teams().getFirst().players().get(1);
+        assertThat(two.goalie()).isTrue();
+        assertThat(two.uniformNumber()).isNull();
+        assertThat(two.eligiblePositions()).isEmpty();
+        assertThat(two.status()).isNull();
     }
 
     @Test

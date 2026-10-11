@@ -16,6 +16,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -38,11 +39,11 @@ class YahooAvailablePlayersTest {
     @Test
     void readsTheUsersOwnTokenAndTellsFreeAgentsFromWaivers() throws Exception {
         when(oauthService.validAccessToken("user-1")).thenReturn("user-token");
-        when(client.getAvailablePlayers("user-token", LEAGUE, 0, 25)).thenReturn(page(
+        when(client.getAvailablePlayers("user-token", LEAGUE, null, 0, 25)).thenReturn(page(
                 player("11", "Spencer Knight", "FLA", "G", "freeagents"),
                 player("12", "Jack Roslovic", "Car", "C", "waivers")));
 
-        List<YahooAvailablePlayerResponse> available = service().availablePlayers("user-1", LEAGUE, 25);
+        List<YahooAvailablePlayerResponse> available = service().availablePlayers("user-1", LEAGUE, null, 25);
 
         assertThat(available).hasSize(2);
         YahooAvailablePlayerResponse knight = available.getFirst();
@@ -60,10 +61,10 @@ class YahooAvailablePlayersTest {
     @Test
     void ownershipYahooDoesNotGiveIsUnknownRatherThanAGuess() throws Exception {
         when(oauthService.validAccessToken("user-1")).thenReturn("user-token");
-        when(client.getAvailablePlayers(anyString(), anyString(), anyInt(), anyInt()))
+        when(client.getAvailablePlayers(anyString(), anyString(), isNull(), anyInt(), anyInt()))
                 .thenReturn(page(player("13", "Nobody Owned", "SJS", "LW", null)));
 
-        assertThat(service().availablePlayers("user-1", LEAGUE, 25).getFirst().availability())
+        assertThat(service().availablePlayers("user-1", LEAGUE, null, 25).getFirst().availability())
                 .isEqualTo(YahooAvailability.UNKNOWN);
     }
 
@@ -71,21 +72,31 @@ class YahooAvailablePlayersTest {
     void stopsAtTheLimitRatherThanPagingTheWholeWire() throws Exception {
         when(oauthService.validAccessToken("user-1")).thenReturn("user-token");
         // A full page, then the second call asks for only the five that are still wanted.
-        when(client.getAvailablePlayers("user-token", LEAGUE, 0, 25)).thenReturn(fullPage(0));
-        when(client.getAvailablePlayers("user-token", LEAGUE, 25, 5)).thenReturn(fullPage(25));
+        when(client.getAvailablePlayers("user-token", LEAGUE, null, 0, 25)).thenReturn(fullPage(0));
+        when(client.getAvailablePlayers("user-token", LEAGUE, null, 25, 5)).thenReturn(fullPage(25));
 
-        assertThat(service().availablePlayers("user-1", LEAGUE, 30)).hasSize(30);
-        verify(client, never()).getAvailablePlayers("user-token", LEAGUE, 50, 25);
+        assertThat(service().availablePlayers("user-1", LEAGUE, null, 30)).hasSize(30);
+        verify(client, never()).getAvailablePlayers("user-token", LEAGUE, null, 50, 25);
     }
 
     @Test
     void aShortPageEndsTheRead() throws Exception {
         when(oauthService.validAccessToken("user-1")).thenReturn("user-token");
-        when(client.getAvailablePlayers("user-token", LEAGUE, 0, 25))
+        when(client.getAvailablePlayers("user-token", LEAGUE, null, 0, 25))
                 .thenReturn(page(player("21", "Last Man", "BUF", "RW", "freeagents")));
 
-        assertThat(service().availablePlayers("user-1", LEAGUE, 150)).hasSize(1);
-        verify(client, never()).getAvailablePlayers("user-token", LEAGUE, 25, 25);
+        assertThat(service().availablePlayers("user-1", LEAGUE, null, 150)).hasSize(1);
+        verify(client, never()).getAvailablePlayers("user-token", LEAGUE, null, 25, 25);
+    }
+
+    @Test
+    void passesThePositionOnToEveryPage() throws Exception {
+        when(oauthService.validAccessToken("user-1")).thenReturn("user-token");
+        when(client.getAvailablePlayers("user-token", LEAGUE, "G", 0, 25)).thenReturn(fullPage(0));
+        when(client.getAvailablePlayers("user-token", LEAGUE, "G", 25, 25))
+                .thenReturn(page(player("99", "Backup Goalie", "SEA", "G", "freeagents")));
+
+        assertThat(service().availablePlayers("user-1", LEAGUE, "G", 50)).hasSize(26);
     }
 
     private static JsonNode page(String... players) throws Exception {

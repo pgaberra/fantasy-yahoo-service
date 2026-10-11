@@ -132,9 +132,35 @@ public class YahooLeagueService {
 
     private static LeagueRosterPlayer rosterPlayer(JsonNode playerArray) {
         String playerKey = null;
+        String fullName = null;
+        String teamAbbrev = null;
+        Integer uniformNumber = null;
+        boolean goalie = false;
+        String status = null;
+        List<String> eligiblePositions = new ArrayList<>();
         for (JsonNode attribute : playerArray.path(0)) {
             if (attribute.hasNonNull("player_key")) {
                 playerKey = attribute.get("player_key").asText();
+            }
+            if (attribute.path("name").hasNonNull("full")) {
+                fullName = attribute.path("name").get("full").asText();
+            }
+            if (attribute.hasNonNull("editorial_team_abbr")) {
+                teamAbbrev = attribute.get("editorial_team_abbr").asText();
+            }
+            if (attribute.hasNonNull("uniform_number")) {
+                uniformNumber = parseIntOrNull(attribute.get("uniform_number").asText());
+            }
+            if (attribute.hasNonNull("position_type")) {
+                goalie = "G".equals(attribute.get("position_type").asText());
+            }
+            if (attribute.hasNonNull("status") && !attribute.get("status").asText().isBlank()) {
+                status = attribute.get("status").asText();
+            }
+            for (JsonNode position : attribute.path("eligible_positions")) {
+                if (position.hasNonNull("position")) {
+                    eligiblePositions.add(position.get("position").asText());
+                }
             }
         }
         Integer playerId = playerId(playerKey);
@@ -142,7 +168,8 @@ public class YahooLeagueService {
             return null;
         }
         String selected = text(flatten(subresource(playerArray, "selected_position")), "position");
-        return new LeagueRosterPlayer(playerKey, playerId, selected);
+        return new LeagueRosterPlayer(playerKey, playerId, selected, fullName, teamAbbrev, uniformNumber, goalie,
+                List.copyOf(eligiblePositions), status);
     }
 
     /** With {@code out=…} Yahoo lists each sub-resource as its own element after the metadata. */
@@ -334,6 +361,14 @@ public class YahooLeagueService {
 
     private static String text(JsonNode node, String field) {
         return node.hasNonNull(field) ? node.get(field).asText() : null;
+    }
+
+    private static Integer parseIntOrNull(String value) {
+        try {
+            return value == null || value.isBlank() ? null : Integer.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static Integer intOrNull(JsonNode node, String field) {
