@@ -68,6 +68,88 @@ public class YahooPlayerService {
     }
 
     /**
+     * Yahoo's percent rostered for every player in a league's collection, by Yahoo player id. A
+     * player Yahoo gives no number for is left out rather than recorded as nought.
+     */
+    public Map<String, Double> leaguePercentRostered(String leagueKey) {
+        String accessToken = oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID);
+        String what = "league " + sanitize(leagueKey) + " percent rostered";
+        Map<String, Double> rostered = new HashMap<>();
+        for (int index = 0; index < MAX_PAGES; index++) {
+            JsonNode root = fetchPage(
+                    (token, start) -> client.getLeaguePlayersPercentOwned(token, leagueKey, start),
+                    accessToken, index * PAGE_SIZE, what);
+            List<JsonNode> entries =
+                    numericChildren(root.path("fantasy_content").path("league").path(1).path("players"));
+            for (JsonNode entry : entries) {
+                String playerId = playerId(entry);
+                Double percent = percentOwned(entry);
+                if (playerId != null && percent != null) {
+                    rostered.put(playerId, percent);
+                }
+            }
+            if (entries.size() < PAGE_SIZE) {
+                return rostered;
+            }
+        }
+        log.warn("Yahoo player pagination hit the {}-page cap for {}; result may be truncated",
+                MAX_PAGES, what);
+        return rostered;
+    }
+
+    private static String playerId(JsonNode entry) {
+        for (JsonNode attr : entry.path("player").path(0)) {
+            if (attr.hasNonNull("player_id")) {
+                return blankToNull(attr.get("player_id").asText());
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Yahoo hangs {@code percent_owned} off the player array as its own element, and its parts
+     * come either as one object or as a list of one-key objects, so the value is looked for in
+     * either shape.
+     */
+    private static Double percentOwned(JsonNode entry) {
+        JsonNode playerArr = entry.path("player");
+        for (int index = 0; index < playerArr.size(); index++) {
+            JsonNode percentOwned = playerArr.path(index).path("percent_owned");
+            if (percentOwned.isMissingNode()) {
+                continue;
+            }
+            Double value = percent(percentOwned.path("value"));
+            if (value != null) {
+                return value;
+            }
+            for (JsonNode part : percentOwned) {
+                value = percent(part.path("value"));
+                if (value != null) {
+                    return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static Double percent(JsonNode value) {
+        Double parsed = null;
+        if (value.isNumber()) {
+            parsed = value.asDouble();
+        } else if (value.isTextual()) {
+            String text = blankToNull(value.asText());
+            if (text != null) {
+                try {
+                    parsed = Double.valueOf(text.replace("%", "").trim());
+                } catch (NumberFormatException e) {
+                    return null;
+                }
+            }
+        }
+        return parsed != null && parsed >= 0 && parsed <= 100 ? parsed : null;
+    }
+
+    /**
      * The players the league has available, best first, capped at {@code limit}; only those
      * eligible at {@code position} when one is given.
      *

@@ -122,6 +122,17 @@ public class YahooFantasyClient {
     }
 
     /**
+     * One page of a league's player collection with each player's percent rostered. The number is
+     * the share of all Yahoo leagues that roster the player, not of this league, so the league it
+     * is read through does not change it.
+     */
+    public JsonNode getLeaguePlayersPercentOwned(String accessToken, String leagueKey, int start) {
+        return get(accessToken,
+                "/league/{leagueKey}/players;start=" + start + ";count=25/percent_owned?format=json",
+                leagueKey);
+    }
+
+    /**
      * The outcome of one call, with the failure as data rather than an exception.
      *
      * @param status Yahoo's HTTP status, or null when no response arrived at all

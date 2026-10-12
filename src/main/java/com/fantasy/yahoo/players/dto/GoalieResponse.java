@@ -30,6 +30,10 @@ public record GoalieResponse(
         Integer saves,
         Integer goalsAgainst,
         Double goalsAgainstAvg,
-        Double savePctg
+        Double savePctg,
+        @Schema(description = "Share of all Yahoo leagues that roster the player, 0-100, as of the "
+                + "last sync. Yahoo's own number, the same whichever league it is read through; "
+                + "null when Yahoo gave none")
+        Double percentRostered
 ) {
 }

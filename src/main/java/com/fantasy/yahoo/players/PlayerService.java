@@ -128,7 +128,7 @@ public class PlayerService {
                 stats.pim, stats.powerPlayGoals, stats.powerPlayPoints, stats.shorthandedGoals,
                 stats.shorthandedPoints, stats.gameWinningGoals, stats.shots, stats.shootingPctg,
                 stats.avgToi, stats.faceoffWinningPctg, stats.hits, stats.blockedShots,
-                stats.totalFaceoffWins, stats.totalFaceoffLosses);
+                stats.totalFaceoffWins, stats.totalFaceoffLosses, s.percentRostered);
     }
 
     private static GoalieResponse toGoalieResponse(Goalie g, GoalieSeason line, boolean hasHeadshot) {
@@ -139,7 +139,7 @@ public class PlayerService {
                 g.sweaterNumber, g.teamAbbrev, hasHeadshot ? g.headshot : null,
                 stats.gamesPlayed, stats.gamesStarted, stats.wins, stats.losses, stats.shutouts,
                 stats.shotsAgainst, stats.saves, stats.goalsAgainst, stats.goalsAgainstAvg,
-                stats.savePctg);
+                stats.savePctg, g.percentRostered);
     }
 
     /** Yahoo eligible positions (comma-joined), or the player's primary position if absent. */
