@@ -148,15 +148,18 @@ public class SyncService {
 
     private SyncRun runSync(Instant started) {
         Map<Long, String> previousLabels = new HashMap<>();
+        Map<Long, Double> previousRostered = new HashMap<>();
         Set<Long> previousSkaterIds = new HashSet<>();
         Set<Long> previousGoalieIds = new HashSet<>();
         for (Skater s : skaterRepository.findAll()) {
             previousSkaterIds.add(s.id);
             previousLabels.put(s.id, label(s.firstName, s.lastName, s.teamAbbrev));
+            previousRostered.put(s.id, s.percentRostered);
         }
         for (Goalie g : goalieRepository.findAll()) {
             previousGoalieIds.add(g.id);
             previousLabels.put(g.id, label(g.firstName, g.lastName, g.teamAbbrev));
+            previousRostered.put(g.id, g.percentRostered);
         }
 
         String leagueKey = leagueToReadThrough();
@@ -166,6 +169,7 @@ public class SyncService {
             // Never wipe the read model on an empty fetch — Yahoo is the only source.
             throw new IllegalStateException("Yahoo returned no players; preserving existing data");
         }
+        Map<Long, Double> rostered = percentRostered(leagueKey, previousRostered);
 
         Instant now = Instant.now();
         List<Skater> skaters = new ArrayList<>();
@@ -178,10 +182,10 @@ public class SyncService {
                 continue;
             }
             if (player.goalie()) {
-                goalies.add(toGoalie(id, player, now));
+                goalies.add(toGoalie(id, player, rostered.get(id), now));
                 goalieStats.add(toGoalieSeason(id, player.goalieStats(), now));
             } else {
-                skaters.add(toSkater(id, player, now));
+                skaters.add(toSkater(id, player, rostered.get(id), now));
                 skaterStats.add(toSkaterSeason(id, player.skaterStats(), now));
             }
         }
@@ -235,6 +239,28 @@ public class SyncService {
         run.added = toJson(added);
         run.removed = toJson(removed);
         return syncRunRepository.save(run);
+    }
+
+    /**
+     * Percent rostered comes from a walk of its own, since Yahoo serves it as a different
+     * subresource from the season stats. Like the thumbnails it must not fail a sync: the pool and
+     * its stats are what every page reads, while the percentages only feed the admins' demo
+     * filter. A walk that fails keeps the numbers the last run stored.
+     */
+    private Map<Long, Double> percentRostered(String leagueKey, Map<Long, Double> previous) {
+        try {
+            Map<Long, Double> read = new HashMap<>();
+            yahooPlayerService.leaguePercentRostered(leagueKey).forEach((yahooId, percent) -> {
+                Long id = parseId(yahooId);
+                if (id != null) {
+                    read.put(id, percent);
+                }
+            });
+            return read;
+        } catch (Exception e) {
+            log.error("Percent rostered could not be read; keeping the values from the last run", e);
+            return previous;
+        }
     }
 
     /**
@@ -383,7 +409,7 @@ public class SyncService {
         }
     }
 
-    private static Skater toSkater(Long id, YahooPlayerResponse p, Instant now) {
+    private static Skater toSkater(Long id, YahooPlayerResponse p, Double percentRostered, Instant now) {
         Skater e = new Skater();
         e.id = id;
         e.firstName = p.firstName();
@@ -393,6 +419,7 @@ public class SyncService {
         e.teamAbbrev = p.teamAbbrev();
         e.headshot = p.imageUrl();
         e.yahooPositions = joinPositions(p.eligiblePositions());
+        e.percentRostered = percentRostered;
         e.syncedAt = now;
         return e;
     }
@@ -426,7 +453,7 @@ public class SyncService {
         return e;
     }
 
-    private static Goalie toGoalie(Long id, YahooPlayerResponse p, Instant now) {
+    private static Goalie toGoalie(Long id, YahooPlayerResponse p, Double percentRostered, Instant now) {
         Goalie e = new Goalie();
         e.id = id;
         e.firstName = p.firstName();
@@ -436,6 +463,7 @@ public class SyncService {
         e.teamAbbrev = p.teamAbbrev();
         e.headshot = p.imageUrl();
         e.yahooPositions = joinPositions(p.eligiblePositions());
+        e.percentRostered = percentRostered;
         e.syncedAt = now;
         return e;
     }

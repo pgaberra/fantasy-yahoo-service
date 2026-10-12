@@ -228,6 +228,37 @@ class SyncServiceTest {
         assertThat(savedSkaters()).hasSize(1);
     }
 
+    @Test
+    void storesEachPlayersPercentRostered() {
+        givenStored();
+        givenYahooReturns(skaterWithoutStats(9), goalieWithStats(101, 40, 25));
+        when(yahooPlayerService.leaguePercentRostered(LEAGUE_KEY)).thenReturn(Map.of("9", 98.0, "101", 4.0));
+
+        syncService().sync();
+
+        assertThat(savedSkaters().getFirst().percentRostered).isEqualTo(98.0);
+        assertThat(savedGoalies().getFirst().percentRostered).isEqualTo(4.0);
+    }
+
+    /**
+     * The percentages only feed the admins' demo filter, so a walk that fails must not cost the
+     * pool its refresh; yesterday's numbers stand in until the next run.
+     */
+    @Test
+    void keepsTheLastPercentRosteredWhenItCannotBeRead() {
+        Skater stored = storedSkater(9);
+        stored.percentRostered = 37.0;
+        givenStored(stored);
+        givenYahooReturns(skaterWithoutStats(9));
+        when(yahooPlayerService.leaguePercentRostered(LEAGUE_KEY))
+                .thenThrow(new RuntimeException("Yahoo timed out"));
+
+        syncService().sync();
+
+        assertThat(savedRun().status).isEqualTo("success");
+        assertThat(savedSkaters().getFirst().percentRostered).isEqualTo(37.0);
+    }
+
     @SuppressWarnings("unchecked")
     private Map<Long, String> refreshedSources() {
         ArgumentCaptor<Map<Long, String>> refreshed = ArgumentCaptor.forClass(Map.class);
@@ -256,6 +287,13 @@ class SyncServiceTest {
     private List<Skater> savedSkaters() {
         ArgumentCaptor<List<Skater>> saved = ArgumentCaptor.forClass(List.class);
         verify(skaterRepository).saveAll(saved.capture());
+        return saved.getValue();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Goalie> savedGoalies() {
+        ArgumentCaptor<List<Goalie>> saved = ArgumentCaptor.forClass(List.class);
+        verify(goalieRepository).saveAll(saved.capture());
         return saved.getValue();
     }
 

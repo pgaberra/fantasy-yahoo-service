@@ -71,6 +71,16 @@ class PlayerServiceTest {
     }
 
     @Test
+    void carriesThePercentRosteredTheSyncStored() {
+        Skater skater = skater(1);
+        skater.percentRostered = 42.0;
+        when(skaterRepository.findAllByOrderByLastNameAscFirstNameAsc()).thenReturn(List.of(skater));
+        when(skaterSeasonRepository.findAllBySeason(2026)).thenReturn(List.of());
+
+        assertThat(playerService().getSkaters(2026).getFirst().percentRostered()).isEqualTo(42.0);
+    }
+
+    @Test
     void neverMixesOneSeasonsNumbersIntoAnother() {
         when(skaterRepository.findAllByOrderByLastNameAscFirstNameAsc())
                 .thenReturn(List.of(skater(1)));

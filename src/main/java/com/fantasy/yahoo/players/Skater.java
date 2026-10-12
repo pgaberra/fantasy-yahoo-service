@@ -26,5 +26,6 @@ public class Skater {
     public String teamAbbrev;
     public String headshot;
     public String yahooPositions;
+    public Double percentRostered;
     public Instant syncedAt;
 }

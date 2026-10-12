@@ -157,6 +157,12 @@ Swagger UI (when running): `http://localhost:8088/swagger-ui.html`
   game probe is refused, the account and its permission are fine. Neither reads into the cache nor
   writes anything, so both are safe to fire at will. The BFF exposes them to admins.
 
+  Each run also reads every player's **percent rostered** (Yahoo's `percent_owned`: the share of
+  all Yahoo leagues that roster him, not of the league it is read through) in a walk of its own,
+  stored on `skaters` / `goalies` and served as `percentRostered`. It feeds only the admins'
+  Streamer Planner demo, so a failed walk logs at `ERROR` and keeps the last run's numbers rather
+  than failing the sync.
+
   `SYNC_YAHOO_DISABLED` remains the off-season switch: it skips the scheduled run entirely,
   for the months when Yahoo has no active game to call at all. A failed run logs at `ERROR`
   and therefore reaches Sentry, which is the signal that the season has ended.

@@ -13,6 +13,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -163,6 +164,51 @@ class YahooPlayerServiceTest {
                 .isInstanceOf(YahooAccessDeniedException.class);
 
         verify(client, times(1)).getLeaguePlayers("tok", LEAGUE, 0, "2025");
+    }
+
+    @Test
+    void readsPercentRosteredInEitherShapeYahooServesIt() throws Exception {
+        when(oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID)).thenReturn("tok");
+        when(client.getLeaguePlayersPercentOwned("tok", LEAGUE, 0)).thenReturn(percentPage(
+                "{\"percent_owned\":[{\"coverage_type\":\"week\"},{\"week\":\"2\"},"
+                        + "{\"value\":\"45\"},{\"delta\":\"-1\"}]}",
+                "{\"percent_owned\":{\"coverage_type\":\"date\",\"value\":3.5,\"delta\":\"0\"}}"));
+
+        Map<String, Double> rostered = service().leaguePercentRostered(LEAGUE);
+
+        assertThat(rostered).containsExactlyInAnyOrderEntriesOf(Map.of("1", 45.0, "2", 3.5));
+    }
+
+    /** No number is not nought: a player Yahoo says nothing about is simply not in the map. */
+    @Test
+    void leavesOutAPlayerYahooGivesNoPercentFor() throws Exception {
+        when(oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID)).thenReturn("tok");
+        when(client.getLeaguePlayersPercentOwned("tok", LEAGUE, 0)).thenReturn(percentPage(
+                "{\"percent_owned\":[{\"coverage_type\":\"week\"},{\"value\":\"-\"}]}",
+                null));
+
+        assertThat(service().leaguePercentRostered(LEAGUE)).isEmpty();
+    }
+
+    @Test
+    void retriesAPercentRosteredPageThatFailed() throws Exception {
+        when(oauthService.validAccessToken(YahooOAuthService.SERVICE_ACCOUNT_ID)).thenReturn("tok");
+        when(client.getLeaguePlayersPercentOwned("tok", LEAGUE, 0))
+                .thenThrow(new YahooUpstreamException("Yahoo Fantasy API call failed: I/O error"))
+                .thenReturn(percentPage("{\"percent_owned\":{\"value\":\"12\"}}", null));
+
+        assertThat(service().leaguePercentRostered(LEAGUE)).containsEntry("1", 12.0);
+        verify(client, times(2)).getLeaguePlayersPercentOwned("tok", LEAGUE, 0);
+    }
+
+    /** Two players, ids 1 and 2, each with the given element after his attributes (or none). */
+    private static JsonNode percentPage(String first, String second) throws Exception {
+        return json("{\"fantasy_content\":{\"league\":[{\"league_key\":\"" + LEAGUE + "\"},{\"players\":{"
+                + "\"0\":{\"player\":[[{\"player_id\":\"1\"},{\"name\":{\"full\":\"Player 1\"}}]"
+                + (first == null ? "" : "," + first) + "]},"
+                + "\"1\":{\"player\":[[{\"player_id\":\"2\"},{\"name\":{\"full\":\"Player 2\"}}]"
+                + (second == null ? "" : "," + second) + "]},"
+                + "\"count\":2}}]}}");
     }
 
     private static JsonNode leaguePage(int count, int firstId) throws Exception {
