@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.ErrorResponse;
@@ -111,7 +112,9 @@ public class GlobalExceptionHandler {
      * the path does not serve) is the caller's mistake, not a fault, yet each one used to be a 500
      * and an ERROR in Sentry. It now answers with its own status and headers, so a 405 keeps its
      * {@code Allow}, and is not logged; the message is the reason phrase, never the exception's,
-     * which can carry the rejected value. Everything else is a fault and logs its full trace.
+     * which can carry the rejected value. It goes out as JSON whatever the request's {@code Accept}
+     * said, or a 406, or any refusal of a request for an image, would find no way to write it.
+     * Everything else is a fault and logs its full trace.
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorDto> handleUnexpected(Exception e) {
@@ -128,6 +131,7 @@ public class GlobalExceptionHandler {
         String reason = known != null ? known.getReasonPhrase() : "Client error";
         return ResponseEntity.status(status)
                 .headers(refusal.getHeaders())
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(ErrorDto.of(status.value(), reason, reason));
     }
 
