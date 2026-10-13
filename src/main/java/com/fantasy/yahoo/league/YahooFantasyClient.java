@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.HttpHeaders;
 
+import java.time.LocalDate;
 import java.util.Map;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
@@ -92,9 +93,17 @@ public class YahooFantasyClient {
     /**
      * A league's teams, each with the players on its roster today. Yahoo's roster is the current
      * one, so a player traded, dropped or picked up since the draft sits where he is now.
+     *
+     * <p>With a {@code date}, each roster is the lineup as set for that day: Yahoo keeps one per
+     * day, so a player's {@code selected_position} is his slot on that date, and a future day shows
+     * what the manager has set for it so far.
      */
-    public JsonNode getLeagueRosters(String accessToken, String leagueKey) {
-        return get(accessToken, "/league/{leagueKey}/teams/roster?format=json", leagueKey);
+    public JsonNode getLeagueRosters(String accessToken, String leagueKey, LocalDate date) {
+        if (date == null) {
+            return get(accessToken, "/league/{leagueKey}/teams/roster?format=json", leagueKey);
+        }
+        return get(accessToken, "/league/{leagueKey}/teams/roster;date={date}?format=json",
+                leagueKey, date.toString());
     }
 
     /**

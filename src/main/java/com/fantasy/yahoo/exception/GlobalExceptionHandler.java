@@ -12,6 +12,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
@@ -56,6 +57,16 @@ public class GlobalExceptionHandler {
         // Bean Validation on a request parameter of a @Validated controller: the caller sent
         // something out of range. An expected client outcome, so no stack trace.
         return build(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    /**
+     * A query or path parameter that does not convert to its declared type, such as a date that is
+     * not YYYY-MM-DD or a limit that is not a number. Without this the catch-all answers a caller's
+     * typo with a 500 and a stack trace. The rejected value is not echoed back.
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorDto> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        return build(HttpStatus.BAD_REQUEST, "Invalid value for parameter '" + e.getName() + "'");
     }
 
     /**

@@ -14,7 +14,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.LocalDate;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -195,7 +198,7 @@ class YahooLeagueServiceTest {
     @Test
     void rosters_listsEachTeamsCurrentPlayersWithTheirSlots() throws Exception {
         when(oauthService.validAccessToken(USER)).thenReturn("token");
-        when(client.getLeagueRosters("token", "465.l.9")).thenReturn(json(
+        when(client.getLeagueRosters("token", "465.l.9", null)).thenReturn(json(
                 "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\",\"name\":\"Test League\"},"
                 + "{\"teams\":{"
                 + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"team_id\":\"1\"},{\"name\":\"Alpha\"},[],"
@@ -219,7 +222,7 @@ class YahooLeagueServiceTest {
                 + "\"count\":1}}}}]},"
                 + "\"count\":2}}]}}"));
 
-        LeagueRostersResponse rosters = service().rosters(USER, "465.l.9");
+        LeagueRostersResponse rosters = service().rosters(USER, "465.l.9", null);
 
         assertThat(rosters.leagueKey()).isEqualTo("465.l.9");
         assertThat(rosters.teams()).extracting("teamKey").containsExactly("465.l.9.t.1", "465.l.9.t.2");
@@ -250,7 +253,7 @@ class YahooLeagueServiceTest {
     @Test
     void rosters_beforeTheDraftListsTeamsWithEmptyRosters() throws Exception {
         when(oauthService.validAccessToken(USER)).thenReturn("token");
-        when(client.getLeagueRosters("token", "465.l.9")).thenReturn(json(
+        when(client.getLeagueRosters("token", "465.l.9", null)).thenReturn(json(
                 "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\"},"
                 + "{\"teams\":{"
                 + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"name\":\"Alpha\"}],"
@@ -259,7 +262,7 @@ class YahooLeagueServiceTest {
                 + "{\"roster\":{\"coverage_type\":\"date\"}}]},"
                 + "\"count\":2}}]}}"));
 
-        LeagueRostersResponse rosters = service().rosters(USER, "465.l.9");
+        LeagueRostersResponse rosters = service().rosters(USER, "465.l.9", null);
 
         assertThat(rosters.teams()).hasSize(2);
         assertThat(rosters.teams()).allSatisfy(team -> assertThat(team.players()).isEmpty());
@@ -268,7 +271,7 @@ class YahooLeagueServiceTest {
     @Test
     void rosters_leavesOutAPlayerWhoseKeyCarriesNoIdAndATeamWithoutAKey() throws Exception {
         when(oauthService.validAccessToken(USER)).thenReturn("token");
-        when(client.getLeagueRosters("token", "465.l.9")).thenReturn(json(
+        when(client.getLeagueRosters("token", "465.l.9", null)).thenReturn(json(
                 "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\"},"
                 + "{\"teams\":{"
                 + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"name\":\"Alpha\"}],"
@@ -280,11 +283,32 @@ class YahooLeagueServiceTest {
                 + "\"1\":{\"team\":[[{\"name\":\"Keyless\"}],{\"roster\":{}}]},"
                 + "\"count\":2}}]}}"));
 
-        LeagueRostersResponse rosters = service().rosters(USER, "465.l.9");
+        LeagueRostersResponse rosters = service().rosters(USER, "465.l.9", null);
 
         assertThat(rosters.teams()).extracting("teamKey").containsExactly("465.l.9.t.1");
         assertThat(rosters.teams().getFirst().players()).extracting("playerId").containsExactly(42);
         assertThat(rosters.teams().getFirst().players().getFirst().selectedPosition()).isNull();
+    }
+
+    @Test
+    void rosters_forADate_readsTheLineupYahooHasForThatDay() throws Exception {
+        LocalDate day = LocalDate.of(2026, 10, 14);
+        when(oauthService.validAccessToken(USER)).thenReturn("token");
+        when(client.getLeagueRosters("token", "465.l.9", day)).thenReturn(json(
+                "{\"fantasy_content\":{\"league\":[{\"league_key\":\"465.l.9\"},"
+                + "{\"teams\":{"
+                + "\"0\":{\"team\":[[{\"team_key\":\"465.l.9.t.1\"},{\"name\":\"Alpha\"}],"
+                + "{\"roster\":{\"coverage_type\":\"date\",\"date\":\"2026-10-14\",\"0\":{\"players\":{"
+                + "\"0\":{\"player\":[[{\"player_key\":\"465.p.6743\"}],"
+                + "{\"selected_position\":[{\"coverage_type\":\"date\",\"date\":\"2026-10-14\"},"
+                + "{\"position\":\"BN\"}]}]},"
+                + "\"count\":1}}}}]},"
+                + "\"count\":1}}]}}"));
+
+        LeagueRostersResponse rosters = service().rosters(USER, "465.l.9", day);
+
+        verify(client).getLeagueRosters("token", "465.l.9", day);
+        assertThat(rosters.teams().getFirst().players().getFirst().selectedPosition()).isEqualTo("BN");
     }
 
     @Test

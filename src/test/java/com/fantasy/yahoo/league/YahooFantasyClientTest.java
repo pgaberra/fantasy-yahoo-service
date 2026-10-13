@@ -9,6 +9,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import java.time.LocalDate;
+
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
@@ -97,7 +99,19 @@ class YahooFantasyClientTest {
                 .andExpect(header("Authorization", "Bearer tok"))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
-        client.getLeagueRosters("tok", "453.l.1/../secret");
+        client.getLeagueRosters("tok", "453.l.1/../secret", null);
+
+        server.verify();
+    }
+
+    @Test
+    void getLeagueRosters_withADate_asksForEachRosterAsSetForThatDay() {
+        server.expect(requestTo(containsString(
+                        "/league/453.l.1%2F..%2Fsecret/teams/roster;date=2026-10-14?format=json")))
+                .andExpect(header("Authorization", "Bearer tok"))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        client.getLeagueRosters("tok", "453.l.1/../secret", LocalDate.of(2026, 10, 14));
 
         server.verify();
     }

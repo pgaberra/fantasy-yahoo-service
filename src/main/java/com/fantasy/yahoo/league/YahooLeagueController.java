@@ -19,6 +19,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -26,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.validation.annotation.Validated;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @Tag(name = "Yahoo Leagues", description = "A user's Yahoo fantasy leagues and their settings")
@@ -87,10 +89,14 @@ public class YahooLeagueController {
 
     @Operation(summary = "List a league's teams with the players each holds now",
             description = "Each team's current roster, after trades, drops and pickups, bench and injured "
-                    + "reserve included. Player ids are the ids the draft's picks and the player read model use.")
+                    + "reserve included. Player ids are the ids the draft's picks and the player read model use. "
+                    + "With a date, each roster is the lineup as set for that day: Yahoo keeps one per day, so a "
+                    + "player's selectedPosition is his slot on that date, and a future day shows what the manager "
+                    + "has set for it so far. This is what a start/bench view of a chosen day reads.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Rosters returned"),
-            @ApiResponse(responseCode = "400", description = "The league key or user id is blank or too long",
+            @ApiResponse(responseCode = "400",
+                    description = "The league key or user id is blank or too long, or the date is not YYYY-MM-DD",
                     content = @Content(schema = @Schema(implementation = ErrorDto.class))),
             @ApiResponse(responseCode = "404", description = "User has not connected Yahoo",
                     content = @Content(schema = @Schema(implementation = ErrorDto.class))),
@@ -99,8 +105,12 @@ public class YahooLeagueController {
     })
     @GetMapping("/{leagueKey}/rosters")
     public LeagueRostersResponse rosters(@PathVariable @NotBlank @Size(max = 64) String leagueKey,
-                                         @RequestParam @NotBlank @Size(max = 128) String appUserId) {
-        return leagueService.rosters(appUserId, leagueKey);
+                                         @RequestParam @NotBlank @Size(max = 128) String appUserId,
+                                         @Parameter(description = "The day whose lineup to read, as YYYY-MM-DD; "
+                                                 + "today's roster when absent")
+                                         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
+                                         LocalDate date) {
+        return leagueService.rosters(appUserId, leagueKey, date);
     }
 
     @Operation(summary = "List the players the league has available",
