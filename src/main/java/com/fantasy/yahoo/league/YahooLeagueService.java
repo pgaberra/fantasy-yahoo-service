@@ -19,6 +19,7 @@ import com.fasterxml.jackson.databind.node.MissingNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -97,11 +98,12 @@ public class YahooLeagueService {
     }
 
     /**
-     * Every team with the players it holds today. A player whose key carries no id is left out
-     * rather than guessed at, since an id is all a consumer matches him by.
+     * Every team with the players it holds today, or with its lineup as set for {@code date} when
+     * one is given. A player whose key carries no id is left out rather than guessed at, since an
+     * id is all a consumer matches him by.
      */
-    public LeagueRostersResponse rosters(String appUserId, String leagueKey) {
-        JsonNode root = client.getLeagueRosters(oauthService.validAccessToken(appUserId), leagueKey);
+    public LeagueRostersResponse rosters(String appUserId, String leagueKey, LocalDate date) {
+        JsonNode root = client.getLeagueRosters(oauthService.validAccessToken(appUserId), leagueKey, date);
         JsonNode leagueArray = root.path("fantasy_content").path("league");
         List<LeagueRosterTeam> teams = new ArrayList<>();
         for (JsonNode entry : numericChildren(subresource(leagueArray, "teams"))) {
