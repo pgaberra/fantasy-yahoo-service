@@ -96,13 +96,24 @@ class YahooLeagueControllerTest {
 
     @Test
     void freeAgents_passesAnAllowedPositionThrough() throws Exception {
-        when(playerService.availablePlayers("user-1", "465.l.1", "G", 50)).thenReturn(List.of());
+        when(playerService.availablePlayers("user-1", "465.l.1", "G", false, 50)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/v1/yahoo/leagues/465.l.1/free-agents")
                         .param("appUserId", "user-1").param("limit", "50").param("position", "G"))
                 .andExpect(status().isOk());
 
-        verify(playerService).availablePlayers("user-1", "465.l.1", "G", 50);
+        verify(playerService).availablePlayers("user-1", "465.l.1", "G", false, 50);
+    }
+
+    @Test
+    void freeAgents_passesWaiversOnlyThrough() throws Exception {
+        when(playerService.availablePlayers("user-1", "465.l.1", null, true, 300)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/yahoo/leagues/465.l.1/free-agents")
+                        .param("appUserId", "user-1").param("limit", "300").param("waiversOnly", "true"))
+                .andExpect(status().isOk());
+
+        verify(playerService).availablePlayers("user-1", "465.l.1", null, true, 300);
     }
 
     @Test

@@ -63,11 +63,16 @@ public class YahooFantasyClient {
      * <p>A {@code position} narrows the list to the players eligible there, so a caller can read
      * a position's whole wire instead of the few that make a mixed top list. It is spliced into
      * the path, so only the allow-listed codes get through.
+     *
+     * <p>{@code waiversOnly} asks for {@code status=W} instead: the players on waivers alone. That
+     * list is short, so a caller can read all of it and know the waiver status of every
+     * available player, not only of the ones that rank high enough to make a capped list.
      */
     public JsonNode getAvailablePlayers(
-            String accessToken, String leagueKey, String position, int start, int count) {
+            String accessToken, String leagueKey, String position, boolean waiversOnly, int start, int count) {
         return get(accessToken,
-                "/league/{leagueKey}/players;status=A" + positionFilter(position) + ";sort=AR;start="
+                "/league/{leagueKey}/players;status=" + (waiversOnly ? "W" : "A") + positionFilter(position)
+                        + ";sort=AR;start="
                         + start + ";count=" + count + ";out=ownership?format=json",
                 leagueKey);
     }

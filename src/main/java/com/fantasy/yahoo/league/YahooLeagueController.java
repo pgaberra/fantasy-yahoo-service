@@ -132,7 +132,10 @@ public class YahooLeagueController {
             @RequestParam(defaultValue = "150") @Min(1) @Max(MAX_AVAILABLE) int limit,
             @Parameter(description = "Only the players eligible at this position; all positions when absent")
             @RequestParam(required = false) @Pattern(regexp = YahooFantasyClient.POSITION_PATTERN)
-            String position) {
-        return playerService.availablePlayers(appUserId, leagueKey, position, limit);
+            String position,
+            @Parameter(description = "Only the players on waivers; free agents and waivers together when "
+                    + "absent or false")
+            @RequestParam(defaultValue = "false") boolean waiversOnly) {
+        return playerService.availablePlayers(appUserId, leagueKey, position, waiversOnly, limit);
     }
 }
