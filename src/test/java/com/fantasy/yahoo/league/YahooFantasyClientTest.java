@@ -48,7 +48,7 @@ class YahooFantasyClientTest {
                 .andExpect(header("Authorization", "Bearer tok"))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
-        client.getAvailablePlayers("tok", "453.l.123", null, 25, 10);
+        client.getAvailablePlayers("tok", "453.l.123", null, false, 25, 10);
 
         server.verify();
     }
@@ -59,14 +59,25 @@ class YahooFantasyClientTest {
                         "/league/453.l.123/players;status=A;position=G;sort=AR;start=0;count=25;out=ownership")))
                 .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
 
-        client.getAvailablePlayers("tok", "453.l.123", "G", 0, 25);
+        client.getAvailablePlayers("tok", "453.l.123", "G", false, 0, 25);
+
+        server.verify();
+    }
+
+    @Test
+    void getAvailablePlayers_asksForWaiversAloneWhenWaiversOnly() {
+        server.expect(requestTo(containsString(
+                        "/league/453.l.123/players;status=W;sort=AR;start=0;count=25;out=ownership")))
+                .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+        client.getAvailablePlayers("tok", "453.l.123", null, true, 0, 25);
 
         server.verify();
     }
 
     @Test
     void getAvailablePlayers_refusesAPositionOutsideTheAllowList() {
-        assertThatThrownBy(() -> client.getAvailablePlayers("tok", "453.l.123", "G;status=T", 0, 25))
+        assertThatThrownBy(() -> client.getAvailablePlayers("tok", "453.l.123", "G;status=T", false, 0, 25))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 

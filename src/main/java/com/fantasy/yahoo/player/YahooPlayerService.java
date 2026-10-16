@@ -157,14 +157,17 @@ public class YahooPlayerService {
      * fact about their league, and the service account is not in it. Yahoo's actual-rank sort is
      * what makes a cap honest — the first page is the best available, so a cap trims the tail
      * nobody is streaming rather than an arbitrary slice.
+     *
+     * <p>{@code waiversOnly} narrows the list to the players on waivers.
      */
     public List<YahooAvailablePlayerResponse> availablePlayers(
-            String appUserId, String leagueKey, String position, int limit) {
+            String appUserId, String leagueKey, String position, boolean waiversOnly, int limit) {
         String accessToken = oauthService.validAccessToken(appUserId);
         List<YahooAvailablePlayerResponse> available = new ArrayList<>();
         for (int index = 0; index < MAX_PAGES && available.size() < limit; index++) {
             int count = Math.min(PAGE_SIZE, limit - available.size());
-            JsonNode root = client.getAvailablePlayers(accessToken, leagueKey, position, index * PAGE_SIZE, count);
+            JsonNode root = client.getAvailablePlayers(
+                    accessToken, leagueKey, position, waiversOnly, index * PAGE_SIZE, count);
             List<JsonNode> entries =
                     numericChildren(root.path("fantasy_content").path("league").path(1).path("players"));
             for (JsonNode entry : entries) {
